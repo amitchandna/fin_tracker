@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorNotice, Loading } from "../components/common";
 import { dateLabel, KIND_LABELS, money, monthLabel, PAYMENT_METHOD_LABELS } from "../format";
-import type { Kind, Meta, PaymentMethod, ScopeFilter, Transaction } from "../types";
+import type { Kind, Meta, PaymentMethod, ScopeFilter, Transaction, TransactionUpdate } from "../types";
 import { useAsync } from "../useAsync";
 
 export interface TxnFilters {
@@ -19,8 +19,16 @@ export interface TxnFilters {
 
 type Sort = "-date" | "date" | "-amount" | "amount" | "category" | "merchant";
 
+/** Offer to remember a one-off choice for every transaction from the same merchant. */
+interface Suggestion {
+  txn: TransactionUpdate;
+  action: "category" | "exclude";
+  count: number;
+}
+
 interface Props {
   meta: Meta;
+  stateFile: string;
   scope: ScopeFilter;
   filters: TxnFilters;
   onFiltersChange: (f: TxnFilters) => void;
@@ -36,12 +44,14 @@ const SOURCE_LABEL: Record<Transaction["category_source"], string> = {
   manual: "Set by you",
 };
 
-export function Transactions({ meta, scope, filters, onFiltersChange, version, onDataChanged }: Props) {
+export function Transactions({ meta, stateFile, scope, filters, onFiltersChange, version, onDataChanged }: Props) {
   const [sort, setSort] = useState<Sort>("-date");
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState(filters.q ?? "");
   const [saving, setSaving] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
+  const [suggestion, setSuggestion] = useState<Suggestion>();
+  const [savedNote, setSavedNote] = useState<string>();
 
   // Keep the box in sync when filters change from elsewhere (e.g. drilling in from the overview).
   useEffect(() => setSearch(filters.q ?? ""), [filters.q]);
@@ -79,7 +89,12 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
     setSaving(t.id);
     setSaveError(undefined);
     try {
-      await api.setCategory(t.id, category === "__reset__" ? null : category);
+      const reset = category === "__reset__";
+      const r = await api.setCategory(t.id, reset ? null : category);
+      setSavedNote(reset ? `Reset ${r.merchant} to automatic.` : `Saved: ${r.merchant} is now ${r.category}.`);
+      setSuggestion(!reset && r.merchant_different_category > 0
+        ? { txn: r, action: "category", count: r.merchant_different_category }
+        : undefined);
       onDataChanged();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -94,12 +109,37 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
     try {
       // Adding back a rule-excluded row needs an explicit "keep"; otherwise just clear the manual choice.
       const next = t.excluded ? (t.excluded_source === "rule" ? false : null) : true;
-      await api.setExcluded(t.id, next);
+      const r = await api.setExcluded(t.id, next);
+      setSavedNote(`Saved: ${r.merchant} is ${r.excluded ? "excluded from" : "back in"} the budget.`);
+      setSuggestion(r.excluded && r.merchant_different_excluded > 0
+        ? { txn: r, action: "exclude", count: r.merchant_different_excluded }
+        : undefined);
       onDataChanged();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(undefined);
+    }
+  }
+
+  async function applySuggestion(sg: Suggestion) {
+    setSaveError(undefined);
+    try {
+      const rule = await api.addRule({
+        pattern: sg.txn.merchant,
+        match: "merchant",
+        category: sg.txn.category,
+        kind: null,
+        exclude: sg.action === "exclude",
+      });
+      setSavedNote(
+        `Saved as a rule: all ${rule.matched} ${sg.txn.merchant} transactions, and any new ones in future exports, ` +
+          (sg.action === "exclude" ? "are excluded from the budget." : `are ${sg.txn.category}.`),
+      );
+      setSuggestion(undefined);
+      onDataChanged();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -166,6 +206,27 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
       </div>
 
       {saveError && <ErrorNotice error={saveError} />}
+      {(savedNote || suggestion) && (
+        <div className="notice notice-info" role="status" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: "1 1 320px" }}>
+            {savedNote && <>✓ {savedNote} </>}
+            {suggestion && (
+              <>
+                Do the same for the {suggestion.count} other <strong>{suggestion.txn.merchant}</strong>{" "}
+                transaction{suggestion.count === 1 ? "" : "s"} and any future ones?
+              </>
+            )}
+          </span>
+          {suggestion && (
+            <button className="btn btn-sm btn-primary" onClick={() => applySuggestion(suggestion)}>
+              {suggestion.action === "exclude" ? "Exclude all" : `Make all ${suggestion.txn.category}`}
+            </button>
+          )}
+          <button className="btn btn-sm btn-ghost" onClick={() => { setSuggestion(undefined); setSavedNote(undefined); }}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {result.error && <ErrorNotice error={result.error} onRetry={result.reload} />}
 
       <section className="card">
@@ -176,6 +237,10 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
               <p className="card-sub">
                 Net spending in this list: {money(data.net_spending)}
                 {data.excluded > 0 && ` · ${data.excluded} excluded from the budget`}
+                <br />
+                <span className="small muted" title={stateFile}>
+                  Category changes and exclusions are saved automatically and kept the next time you open the app.
+                </span>
               </p>
             )}
           </div>

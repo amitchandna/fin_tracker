@@ -53,6 +53,7 @@ class Transaction:
     recurring_id: str | None = None
     excluded: bool = False  # scrubbed from every budget total, still listed
     excluded_source: str | None = None  # manual | rule
+    occurrence: int = 0  # index among identical rows (same date, amount, description) in its file
 
     @property
     def month(self) -> str:

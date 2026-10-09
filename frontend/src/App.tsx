@@ -150,7 +150,7 @@ export default function App() {
         ) : tab === "income" ? (
           <Income version={version} onDrill={drill} />
         ) : tab === "transactions" ? (
-          <Transactions meta={meta.data!} scope={scope} filters={txnFilters} onFiltersChange={setTxnFilters}
+          <Transactions meta={meta.data!} stateFile={config.data!.state_file} scope={scope} filters={txnFilters} onFiltersChange={setTxnFilters}
                         version={version} onDataChanged={bump} />
         ) : tab === "recurring" ? (
           <Recurring version={version} onDrill={drill} />

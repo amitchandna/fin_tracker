@@ -108,8 +108,22 @@ frontend/                React + TypeScript + Vite + Recharts
 sample_data/             realistic exports in four different formats (scripts/generate_sample_data.py)
 ```
 
-Your rules and overrides are saved to `<data dir>/.fintracker/state.json`. To store them
-elsewhere, set `FIN_TRACKER_STATE_DIR`.
+### Your changes are saved
+
+Every category change, budget exclusion, rule and per-file setting is saved straight away to
+`<data dir>/.fintracker/state.json`, and reloaded the next time the app starts. To keep it
+somewhere else, set `FIN_TRACKER_STATE_DIR`. Your CSV files are never modified: a fresh
+download from your bank would overwrite edits made in them, and the originals stay
+untouched as your record.
+
+- **Saved choices survive restarts, account renames, file renames and re-exports.** Each one
+  is stored with the transaction's date, amount and description. If its internal ID changes
+  (e.g. this month's export is saved as `chase_oct.csv` instead of `chase_sept.csv`), it's
+  matched to the transaction again by those details. The file is plain, readable JSON, and
+  you can back it up with the rest of your data folder.
+- **Categorize once per merchant.** After you change a category or exclude a transaction,
+  the app offers to do the same for every other transaction from that merchant. Accepting
+  creates a merchant rule, so new charges in future exports are handled automatically too.
 
 ### API
 
@@ -123,7 +137,7 @@ elsewhere, set `FIN_TRACKER_STATE_DIR`.
 | `PATCH /api/transactions/{id}` | set or reset a category (`category`), exclude from or add back to the budget (`excluded`) |
 | `GET /api/transactions/export` | categorized CSV export |
 | `GET /api/recurring` | detected recurring payments |
-| `GET/POST/DELETE /api/rules` | custom categorization rules |
+| `GET/POST/DELETE /api/rules` | custom rules (`contains`, `regex` or exact `merchant` match; optional `exclude`) |
 | `GET /api/sources`, `PUT /api/sources/{file}` | detected files and per-file overrides |
 | `POST /api/rescan` | force a re-read |
 

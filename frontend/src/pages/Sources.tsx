@@ -19,7 +19,9 @@ export function Sources({ config, version, onDataChanged }: {
       <div className="notice notice-info">
         Reading every <code>.csv</code> file in <span className="mono">{config.data_dir}</span> (including
         subfolders). Drop new exports there and press <strong>Rescan</strong>. Exports that overlap are
-        de-duplicated automatically.
+        de-duplicated automatically. Your categories, exclusions, rules and file settings are saved in{" "}
+        <span className="mono">{config.state_file}</span>. They're kept when you restart the app, rename a file or
+        download a new export. Your CSV files are never modified.
       </div>
       {result.data.length === 0 ? (
         <div className="card empty">
