@@ -7,8 +7,10 @@ import type { NameType, ValueType } from "recharts/types/component/DefaultToolti
 import { api } from "../api";
 import { usePalette } from "../colors";
 import { Card, ErrorNotice, Loading, StatTile, Swatch } from "../components/common";
+import { MoneyInReview } from "../components/MoneyInReview";
+import { PaySchedules } from "../components/PaySchedules";
 import { dateLabel, money, moneyCompact, moneyWhole, monthLabel, percent } from "../format";
-import type { MonthSummary } from "../types";
+import type { Meta, MonthSummary } from "../types";
 import { useAsync } from "../useAsync";
 import type { TxnFilters } from "./Transactions";
 
@@ -32,7 +34,12 @@ function ChartTooltip({ title, rows }: { title: string; rows: { label: string; v
   );
 }
 
-export function Income({ version, onDrill }: { version: number; onDrill: (f: TxnFilters) => void }) {
+export function Income({ meta, version, onDrill, onDataChanged }: {
+  meta: Meta;
+  version: number;
+  onDrill: (f: TxnFilters) => void;
+  onDataChanged: () => void;
+}) {
   const palette = usePalette();
   const [sourceMonth, setSourceMonth] = useState("");
   const overview = useAsync(() => api.overview(), [version]);
@@ -54,8 +61,18 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
   const best = months.reduce<MonthSummary | undefined>((b, m) => (!b || m.savings > b.savings ? m : b), undefined);
   const last = months.at(-1);
 
+  const setup = (
+    <div className="stack" style={{ marginBottom: 16 }}>
+      <MoneyInReview categories={meta.categories} version={version} onDataChanged={onDataChanged} />
+      <PaySchedules accounts={meta.accounts} version={version} onDataChanged={onDataChanged} />
+    </div>
+  );
+  const hasExpected = months.some((m) => m.expected_income != null);
+
   if (o.total_income <= 0) {
     return (
+      <>
+      {setup}
       <div className="card empty">
         <h2>No income found yet</h2>
         <p>
@@ -67,6 +84,7 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
           the Transactions tab, or add a rule.
         </p>
       </div>
+      </>
     );
   }
 
@@ -79,6 +97,7 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
         title={monthLabel(m.month)}
         rows={[
           { label: "Income", value: money(m.income), color: colors.income },
+          ...(m.expected_income != null ? [{ label: "Expected income", value: money(m.expected_income) }] : []),
           { label: "Spending", value: money(m.spending), color: colors.spending },
           { label: m.savings >= 0 ? "Saved" : "Overspent", value: <strong>{money(m.savings)}</strong> },
           { label: "Savings rate", value: rate(m.savings_rate) },
@@ -104,11 +123,17 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
 
   return (
     <div>
+      {setup}
       <div className="tiles">
         <StatTile
           label="Average monthly income"
           value={moneyWhole(o.average_monthly_income)}
-          foot={last ? `${monthLabel(last.month)}: ${moneyWhole(last.income)}` : undefined}
+          foot={last ? (
+            <>
+              {monthLabel(last.month)}: {moneyWhole(last.income)}
+              {last.expected_income != null && <> of {moneyWhole(last.expected_income)} expected</>}
+            </>
+          ) : undefined}
         />
         <StatTile
           label="Average saved per month"
@@ -158,7 +183,7 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
         </div>
       </Card>
 
-      <div className="grid-2" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+      <div className="grid-2 grid-even">
         <Card title="Saved each month" sub="Income minus spending">
           <ul className="legend" aria-label="Legend">
             <li><Swatch color={colors.saved} />Saved</li>
@@ -207,6 +232,7 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
               <thead>
                 <tr>
                   <th>Month</th>
+                  {hasExpected && <th className="num">Expected</th>}
                   <th className="num">Income</th>
                   <th className="num">Spending</th>
                   <th className="num">Saved</th>
@@ -220,7 +246,15 @@ export function Income({ version, onDrill }: { version: number; onDrill: (f: Txn
                       aria-selected={sourceMonth === m.month}
                       style={sourceMonth === m.month ? { background: "var(--accent-wash)" } : undefined}>
                     <td>{monthLabel(m.month)}</td>
-                    <td className="num">{money(m.income)}</td>
+                    {hasExpected && (
+                      <td className="num secondary">{m.expected_income != null ? money(m.expected_income) : "—"}</td>
+                    )}
+                    <td className="num">
+                      {money(m.income)}
+                      {m.expected_income != null && m.income < m.expected_income - 0.5 && (
+                        <div className="small delta-up">{money(m.income - m.expected_income)}</div>
+                      )}
+                    </td>
                     <td className="num">{money(m.spending)}</td>
                     <td className={`num ${m.savings >= 0 ? "delta-down" : "delta-up"}`}>
                       <strong>{money(m.savings)}</strong>

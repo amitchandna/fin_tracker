@@ -172,6 +172,10 @@ def normalize_merchant(description: str) -> str:
     """Strip noise (card prefixes, store numbers, dates, phone numbers, locations)
     so repeated charges from the same merchant group together."""
     d = description.upper().strip()
+    # Peer-to-peer: who the money went to / came from is what matters.
+    p2p = re.match(r"^(ZELLE|VENMO|CASH APP|PAYPAL)\b.*?\b(FROM|TO)\s+([A-Z][A-Z'.-]*(?:\s+[A-Z][A-Z'.-]*)?)", d)
+    if p2p:
+        return f"{p2p.group(1)} {p2p.group(2)} {p2p.group(3)}".title()
     for _ in range(3):
         new = _NOISE_PREFIXES.sub("", d)
         if new == d:
@@ -214,6 +218,7 @@ class UserRule:
     match: str = "contains"  # contains | regex | merchant (exact merchant name, as shown in the app)
     kind: str | None = None  # optionally force a kind (expense / income / transfer / refund)
     exclude: bool = False  # drop matching transactions from budget totals
+    direction: str = "any"  # any | in (money in only) | out (money out only)
 
     def matches(self, description: str) -> bool:
         if self.match == "merchant":
@@ -231,7 +236,7 @@ class UserRule:
 
     def to_dict(self) -> dict:
         return {"id": self.id, "pattern": self.pattern, "category": self.category,
-                "match": self.match, "kind": self.kind, "exclude": self.exclude}
+                "match": self.match, "kind": self.kind, "exclude": self.exclude, "direction": self.direction}
 
 
 @dataclass
@@ -268,6 +273,8 @@ def classify(description: str, amount: float, account_type: AccountType, source_
     direction = "in" if amount > 0 else "out"
 
     for rule in user_rules:
+        if rule.direction != "any" and rule.direction != direction:
+            continue
         if rule.matches(description):
             kind = Kind(rule.kind) if rule.kind in Kind._value2member_map_ else None
             if kind is None:
@@ -275,8 +282,11 @@ def classify(description: str, amount: float, account_type: AccountType, source_
                     kind = Kind.TRANSFER
                 elif rule.category == INCOME and amount > 0:
                     kind = Kind.INCOME
+                elif amount > 0:
+                    # Money in filed under a spending category is someone paying you back.
+                    kind = Kind.REFUND
                 else:
-                    kind = _default_kind(amount, account_type, description)
+                    kind = Kind.EXPENSE
             return Classification(rule.category, kind, "rule", excluded=rule.exclude)
 
     for rule in BUILTIN_RULES:

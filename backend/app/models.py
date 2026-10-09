@@ -48,7 +48,7 @@ class Transaction:
     category: str
     merchant: str
     source_category: str | None = None
-    category_source: str = "auto"  # auto | rule | source | manual
+    category_source: str = "auto"  # auto | rule | source | manual | paycheck
     is_recurring: bool = False
     recurring_id: str | None = None
     excluded: bool = False  # scrubbed from every budget total, still listed
@@ -62,6 +62,13 @@ class Transaction:
     @property
     def abs_amount(self) -> float:
         return abs(self.amount)
+
+    @property
+    def needs_review(self) -> bool:
+        """Money in that the app only guessed at: the user should say whether it's
+        income or someone paying them back."""
+        return (self.amount > 0 and not self.excluded and self.kind in (Kind.INCOME, Kind.REFUND)
+                and self.category_source in ("auto", "source"))
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +90,7 @@ class Transaction:
             "recurring_id": self.recurring_id,
             "excluded": self.excluded,
             "excluded_source": self.excluded_source,
+            "needs_review": self.needs_review,
         }
 
 

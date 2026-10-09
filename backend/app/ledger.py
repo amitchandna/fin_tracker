@@ -6,12 +6,13 @@ from __future__ import annotations
 import hashlib
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .categorizer import CARD_PAYMENT, INCOME, TRANSFERS, classify, detect_payment_method, normalize_merchant
 from .models import Kind, ParsedFile, Transaction
 from .parser import account_name_from_file, parse_csv_file
+from .paychecks import ExpectedPay, expected_pay
 from .recurring import RecurringSeries, detect_recurring
 from .state import StateStore, fingerprint
 
@@ -42,6 +43,7 @@ class Snapshot:
     transactions: list[Transaction] = field(default_factory=list)
     sources: list[SourceInfo] = field(default_factory=list)
     recurring: list[RecurringSeries] = field(default_factory=list)
+    expected: list[ExpectedPay] = field(default_factory=list)
     loaded_at: datetime = field(default_factory=datetime.now)
 
 
@@ -183,6 +185,7 @@ class Ledger:
             ))
 
         transactions.sort(key=lambda t: (t.date, t.id), reverse=True)
+        expected = self._match_paychecks(transactions)
         recurring = detect_recurring([t for t in transactions if not t.excluded])
         by_id = {t.id: t for t in transactions}
         for s in recurring:
@@ -190,7 +193,25 @@ class Ledger:
                 if tid in by_id:
                     by_id[tid].is_recurring = True
                     by_id[tid].recurring_id = s.id
-        return Snapshot(transactions=transactions, sources=sources, recurring=recurring)
+        return Snapshot(transactions=transactions, sources=sources, recurring=recurring, expected=expected)
+
+    def _match_paychecks(self, transactions: list[Transaction]) -> list[ExpectedPay]:
+        """Expected paydays from the first month of data to the end of next month, with
+        matching deposits confirmed as income (a manual label always wins)."""
+        schedules = self.state.pay_schedules()
+        if not schedules:
+            return []
+        today = date.today()
+        first = min((t.date for t in transactions), default=today).replace(day=1)
+        last = max([today] + [t.date for t in transactions])
+        end = (last.replace(day=28) + timedelta(days=35)).replace(day=1) - timedelta(days=1)
+        expected = expected_pay(schedules, transactions, first, end)
+        by_id = {t.id: t for t in transactions}
+        for e in expected:
+            t = by_id.get(e.transaction_id or "")
+            if t and t.category_source != "manual":
+                t.kind, t.category, t.category_source = Kind.INCOME, INCOME, "paycheck"
+        return expected
 
 
 def _kind_for_manual(category: str, amount: float, current: Kind) -> Kind:

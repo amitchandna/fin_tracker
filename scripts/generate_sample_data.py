@@ -121,6 +121,10 @@ def checking():
         if rng.random() < 0.02:
             rows.append((d, "DEBIT CARD PURCHASE CVS/PHARMACY #0921", money(8, 45), 0))
     rows.append((date(2026, 6, 3), "CHECK 1043", 180.00, 0))
+    # Friends paying back their share: money in that isn't income.
+    rows.append((date(2026, 5, 10), "ZELLE PAYMENT FROM ALEX KIM", 0, 93.00))
+    rows.append((date(2026, 7, 20), "VENMO CASHOUT", 0, 64.50))
+    rows.append((date(2026, 9, 14), "ZELLE PAYMENT FROM ALEX KIM", 0, 18.50))
     rows.append((date(2026, 8, 12), "IRS TREAS 310 TAX REF", 0, 742.00))
     rows.sort(key=lambda r: r[0])
     balance = 8200.00

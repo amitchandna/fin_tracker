@@ -148,7 +148,7 @@ export default function App() {
           <Overview scope={scope} categoryOrder={categoryOrder} accounts={meta.data!.accounts} version={version}
                     onDrill={drill} />
         ) : tab === "income" ? (
-          <Income version={version} onDrill={drill} />
+          <Income meta={meta.data!} version={version} onDrill={drill} onDataChanged={bump} />
         ) : tab === "transactions" ? (
           <Transactions meta={meta.data!} stateFile={config.data!.state_file} scope={scope} filters={txnFilters} onFiltersChange={setTxnFilters}
                         version={version} onDataChanged={bump} />
