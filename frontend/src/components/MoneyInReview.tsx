@@ -130,8 +130,10 @@ export function MoneyInReview({ categories, version, onDataChanged }: {
                   <td>
                     <div>{t.merchant}</div>
                     <div className="small muted desc" title={t.description}>{t.description} · {t.account}</div>
+                    {t.memo && <div className="small muted desc memo" title={t.memo}>Memo: {t.memo}</div>}
                     <div className="small muted">
                       Best guess: {t.kind === "income" ? "income" : `paid back for ${t.category}`}
+                      {t.category_source === "memo" && " (from the memo)"}
                     </div>
                   </td>
                   <td className="num amount-in">+{money(t.amount)}</td>

@@ -52,7 +52,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
       >
         <form className="form-row" onSubmit={submit}>
           <label className="field" style={{ flex: "2 1 220px" }}>
-            {match === "regex" ? "When the description matches the pattern" : match === "merchant" ? "When the merchant is" : "When the description contains"}
+            {match === "regex" ? "When the description matches the pattern" : match === "merchant" ? "When the merchant is" : "When the description or memo contains"}
             <input className="input" value={pattern} onChange={(e) => setPattern(e.target.value)}
                    placeholder={match === "regex" ? "e.g. ^SQ \\*JOE" : "e.g. JOE'S COFFEE"} required />
           </label>

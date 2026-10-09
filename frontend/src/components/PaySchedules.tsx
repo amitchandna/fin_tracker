@@ -158,7 +158,7 @@ export function PaySchedules({ accounts, version, onDataChanged }: {
                 </select>
               </label>
               <label className="field" style={{ flex: "1 1 180px" }}>
-                Description contains
+                Description or memo contains
                 <input className="input" value={f.match_text ?? ""} placeholder="e.g. PAYROLL"
                        onChange={(e) => set({ match_text: e.target.value || null })} />
               </label>
