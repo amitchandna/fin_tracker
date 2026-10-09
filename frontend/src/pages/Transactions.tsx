@@ -1,0 +1,223 @@
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import { ErrorNotice, Loading } from "../components/common";
+import { dateLabel, KIND_LABELS, money, monthLabel, PAYMENT_METHOD_LABELS } from "../format";
+import type { Kind, Meta, PaymentMethod, ScopeFilter, Transaction } from "../types";
+import { useAsync } from "../useAsync";
+
+export interface TxnFilters {
+  month?: string;
+  category?: string[];
+  account?: string[];
+  payment_method?: PaymentMethod[];
+  kind?: Kind[];
+  recurring?: boolean;
+  q?: string;
+}
+
+type Sort = "-date" | "date" | "-amount" | "amount" | "category" | "merchant";
+
+interface Props {
+  meta: Meta;
+  scope: ScopeFilter;
+  filters: TxnFilters;
+  onFiltersChange: (f: TxnFilters) => void;
+  version: number;
+  onDataChanged: () => void;
+}
+
+const PAGE = 50;
+const SOURCE_LABEL: Record<Transaction["category_source"], string> = {
+  auto: "Auto-categorized",
+  rule: "From your rule",
+  source: "From the bank's category",
+  manual: "Set by you",
+};
+
+export function Transactions({ meta, scope, filters, onFiltersChange, version, onDataChanged }: Props) {
+  const [sort, setSort] = useState<Sort>("-date");
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState(filters.q ?? "");
+  const [saving, setSaving] = useState<string>();
+  const [saveError, setSaveError] = useState<string>();
+
+  // Keep the box in sync when filters change from elsewhere (e.g. drilling in from the overview).
+  useEffect(() => setSearch(filters.q ?? ""), [filters.q]);
+
+  // Debounce the search box into the filters.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if ((filters.q ?? "") !== search) onFiltersChange({ ...filters, q: search || undefined });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filterKey = JSON.stringify([filters, scope]);
+  useEffect(() => setPage(0), [filterKey, sort]);
+
+  // Scope (top bar) narrows payment method / account unless the page sets its own.
+  const params = {
+    ...filters,
+    payment_method: filters.payment_method ?? scope.payment_method,
+    account: filters.account ?? scope.account,
+    account_type: scope.account_type,
+    recurring: filters.recurring === undefined ? undefined : String(filters.recurring),
+    sort,
+    limit: PAGE,
+    offset: page * PAGE,
+  };
+  const result = useAsync(() => api.transactions(params), [filterKey, sort, page, version]);
+
+  const set = <K extends keyof TxnFilters>(key: K, value: TxnFilters[K]) =>
+    onFiltersChange({ ...filters, [key]: value });
+  const single = (v: string) => (v ? [v] : undefined);
+
+  async function changeCategory(t: Transaction, category: string) {
+    setSaving(t.id);
+    setSaveError(undefined);
+    try {
+      await api.setCategory(t.id, category === "__reset__" ? null : category);
+      onDataChanged();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(undefined);
+    }
+  }
+
+  const toggleSort = (key: "date" | "amount") => setSort(sort === `-${key}` ? key : (`-${key}` as Sort));
+  const arrow = (key: string) => (sort === key ? " ↑" : sort === `-${key}` ? " ↓" : "");
+  const active = Object.values(filters).some((v) => v !== undefined && !(Array.isArray(v) && !v.length));
+  const data = result.data;
+
+  return (
+    <div>
+      <div className="filters" role="search">
+        <input
+          className="input"
+          type="search"
+          placeholder="Search description, merchant, category…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: "1 1 240px" }}
+          aria-label="Search transactions"
+        />
+        <select className="select" aria-label="Month" value={filters.month ?? ""} onChange={(e) => set("month", e.target.value || undefined)}>
+          <option value="">All months</option>
+          {[...meta.months].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        <select className="select" aria-label="Category" value={filters.category?.[0] ?? ""} onChange={(e) => set("category", single(e.target.value))}>
+          <option value="">All categories</option>
+          {meta.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="select" aria-label="Paid with" value={filters.payment_method?.[0] ?? ""} onChange={(e) => set("payment_method", single(e.target.value) as PaymentMethod[] | undefined)}>
+          <option value="">Any payment method</option>
+          {meta.payment_methods.map((p) => <option key={p} value={p}>{PAYMENT_METHOD_LABELS[p]}</option>)}
+        </select>
+        <select className="select" aria-label="Account" value={filters.account?.[0] ?? ""} onChange={(e) => set("account", single(e.target.value))}>
+          <option value="">All accounts</option>
+          {meta.accounts.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="select" aria-label="Type" value={filters.kind?.[0] ?? ""} onChange={(e) => set("kind", single(e.target.value) as Kind[] | undefined)}>
+          <option value="">All types</option>
+          {meta.kinds.map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
+        </select>
+        <select
+          className="select"
+          aria-label="Recurring"
+          value={filters.recurring === undefined ? "" : String(filters.recurring)}
+          onChange={(e) => set("recurring", e.target.value === "" ? undefined : e.target.value === "true")}
+        >
+          <option value="">Recurring + one-time</option>
+          <option value="true">Recurring only</option>
+          <option value="false">One-time only</option>
+        </select>
+        {active && (
+          <button className="btn btn-ghost" onClick={() => { setSearch(""); onFiltersChange({}); }}>Clear filters</button>
+        )}
+      </div>
+
+      {saveError && <ErrorNotice error={saveError} />}
+      {result.error && <ErrorNotice error={result.error} onRetry={result.reload} />}
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">{data ? `${data.total.toLocaleString()} transactions` : "Transactions"}</h2>
+            {data && <p className="card-sub">Net spending in this list: {money(data.net_spending)}</p>}
+          </div>
+          <a className="btn" href={api.exportUrl({ month: filters.month, account: params.account, payment_method: params.payment_method })}>
+            Export CSV
+          </a>
+        </div>
+        {!data ? <Loading /> : data.items.length === 0 ? (
+          <div className="empty">No transactions match these filters.</div>
+        ) : (
+          <div className="table-wrap" style={{ opacity: result.loading ? 0.6 : 1 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th className="sortable" onClick={() => toggleSort("date")} aria-sort={sort.endsWith("date") ? (sort === "date" ? "ascending" : "descending") : "none"}>Date{arrow("date")}</th>
+                  <th>Description</th>
+                  <th>Category</th>
+                  <th>Paid with</th>
+                  <th>Account</th>
+                  <th className="num sortable" onClick={() => toggleSort("amount")} aria-sort={sort.endsWith("amount") ? (sort === "amount" ? "ascending" : "descending") : "none"}>Amount{arrow("amount")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((t) => (
+                  <tr key={t.id}>
+                    <td className="secondary" style={{ whiteSpace: "nowrap" }}>{dateLabel(t.date)}</td>
+                    <td>
+                      <div className="desc" title={t.description}>{t.merchant}</div>
+                      <div className="small muted desc" title={t.description}>
+                        {t.description}
+                      </div>
+                      <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
+                        {t.is_recurring && <span className="badge badge-accent">↻ Recurring</span>}
+                        {t.kind !== "expense" && <span className="badge">{KIND_LABELS[t.kind]}</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <select
+                        className="select"
+                        value={t.category}
+                        disabled={saving === t.id}
+                        onChange={(e) => changeCategory(t, e.target.value)}
+                        aria-label={`Category for ${t.merchant}`}
+                        title={SOURCE_LABEL[t.category_source]}
+                        style={{ maxWidth: 190 }}
+                      >
+                        {!meta.categories.includes(t.category) && <option value={t.category}>{t.category}</option>}
+                        {meta.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                        {t.category_source === "manual" && <option value="__reset__">↺ Reset to automatic</option>}
+                      </select>
+                      <div className="small muted">{SOURCE_LABEL[t.category_source]}</div>
+                    </td>
+                    <td className="secondary">{PAYMENT_METHOD_LABELS[t.payment_method]}</td>
+                    <td className="secondary small">{t.account}</td>
+                    <td className={`num ${t.amount > 0 ? "amount-in" : ""}`}>
+                      {t.amount > 0 ? "+" : ""}{money(t.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {data && data.total > PAGE && (
+          <div className="pager">
+            <span>
+              Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, data.total)} of {data.total.toLocaleString()}
+            </span>
+            <span style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
+              <button className="btn btn-sm" disabled={(page + 1) * PAGE >= data.total} onClick={() => setPage(page + 1)}>Next</button>
+            </span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

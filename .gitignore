@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Fin Tracker: your real financial CSVs and app state stay local
+/data/*
+!/data/.gitkeep
+.fintracker/
+node_modules/
+*.tsbuildinfo
