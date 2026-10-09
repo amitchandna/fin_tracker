@@ -89,6 +89,7 @@ class Ledger:
     def _build(self, files: list[Path]) -> Snapshot:
         rules = self.state.rules()
         overrides = self.state.overrides()
+        exclusions = self.state.excluded()
         settings = self.state.source_settings()
 
         transactions: list[Transaction] = []
@@ -131,6 +132,9 @@ class Ledger:
                 if tid in overrides:
                     category, category_source = overrides[tid], "manual"
                     kind = _kind_for_manual(category, row.amount, kind)
+                excluded, excluded_source = c.excluded, ("rule" if c.excluded else None)
+                if tid in exclusions:
+                    excluded, excluded_source = exclusions[tid], "manual"
 
                 transactions.append(Transaction(
                     id=tid,
@@ -146,6 +150,8 @@ class Ledger:
                     merchant=normalize_merchant(row.description),
                     source_category=row.source_category,
                     category_source=category_source,
+                    excluded=excluded,
+                    excluded_source=excluded_source if excluded else None,
                 ))
                 dates.append(row.date)
                 added += 1
@@ -171,7 +177,7 @@ class Ledger:
             ))
 
         transactions.sort(key=lambda t: (t.date, t.id), reverse=True)
-        recurring = detect_recurring(transactions)
+        recurring = detect_recurring([t for t in transactions if not t.excluded])
         by_id = {t.id: t for t in transactions}
         for s in recurring:
             for tid in s.transaction_ids:

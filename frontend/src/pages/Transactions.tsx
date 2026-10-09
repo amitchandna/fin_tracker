@@ -12,6 +12,8 @@ export interface TxnFilters {
   payment_method?: PaymentMethod[];
   kind?: Kind[];
   recurring?: boolean;
+  /** true = only scrubbed transactions, false = only those counted in the budget */
+  excluded?: boolean;
   q?: string;
 }
 
@@ -62,6 +64,7 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
     account: filters.account ?? scope.account,
     account_type: scope.account_type,
     recurring: filters.recurring === undefined ? undefined : String(filters.recurring),
+    excluded: filters.excluded === undefined ? undefined : String(filters.excluded),
     sort,
     limit: PAGE,
     offset: page * PAGE,
@@ -77,6 +80,21 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
     setSaveError(undefined);
     try {
       await api.setCategory(t.id, category === "__reset__" ? null : category);
+      onDataChanged();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(undefined);
+    }
+  }
+
+  async function toggleExcluded(t: Transaction) {
+    setSaving(t.id);
+    setSaveError(undefined);
+    try {
+      // Adding back a rule-excluded row needs an explicit "keep"; otherwise just clear the manual choice.
+      const next = t.excluded ? (t.excluded_source === "rule" ? false : null) : true;
+      await api.setExcluded(t.id, next);
       onDataChanged();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -132,6 +150,16 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
           <option value="true">Recurring only</option>
           <option value="false">One-time only</option>
         </select>
+        <select
+          className="select"
+          aria-label="Budget"
+          value={filters.excluded === undefined ? "" : String(filters.excluded)}
+          onChange={(e) => set("excluded", e.target.value === "" ? undefined : e.target.value === "true")}
+        >
+          <option value="">In budget + excluded</option>
+          <option value="false">In budget only</option>
+          <option value="true">Excluded only</option>
+        </select>
         {active && (
           <button className="btn btn-ghost" onClick={() => { setSearch(""); onFiltersChange({}); }}>Clear filters</button>
         )}
@@ -143,8 +171,13 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
       <section className="card">
         <div className="card-head">
           <div>
-            <h2 className="card-title">{data ? `${data.total.toLocaleString()} transactions` : "Transactions"}</h2>
-            {data && <p className="card-sub">Net spending in this list: {money(data.net_spending)}</p>}
+            <h2 className="card-title">{data ? `${data.total.toLocaleString()} transaction${data.total === 1 ? "" : "s"}` : "Transactions"}</h2>
+            {data && (
+              <p className="card-sub">
+                Net spending in this list: {money(data.net_spending)}
+                {data.excluded > 0 && ` · ${data.excluded} excluded from the budget`}
+              </p>
+            )}
           </div>
           <a className="btn" href={api.exportUrl({ month: filters.month, account: params.account, payment_method: params.payment_method })}>
             Export CSV
@@ -163,11 +196,12 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
                   <th>Paid with</th>
                   <th>Account</th>
                   <th className="num sortable" onClick={() => toggleSort("amount")} aria-sort={sort.endsWith("amount") ? (sort === "amount" ? "ascending" : "descending") : "none"}>Amount{arrow("amount")}</th>
+                  <th><span className="sr-only">Budget</span></th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((t) => (
-                  <tr key={t.id}>
+                  <tr key={t.id} className={t.excluded ? "excluded" : undefined}>
                     <td className="secondary" style={{ whiteSpace: "nowrap" }}>{dateLabel(t.date)}</td>
                     <td>
                       <div className="desc" title={t.description}>{t.merchant}</div>
@@ -177,6 +211,11 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
                       <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
                         {t.is_recurring && <span className="badge badge-accent">↻ Recurring</span>}
                         {t.kind !== "expense" && <span className="badge">{KIND_LABELS[t.kind]}</span>}
+                        {t.excluded && (
+                          <span className="badge badge-warn">
+                            ⊘ Excluded from budget{t.excluded_source === "rule" ? " by rule" : ""}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -197,8 +236,19 @@ export function Transactions({ meta, scope, filters, onFiltersChange, version, o
                     </td>
                     <td className="secondary">{PAYMENT_METHOD_LABELS[t.payment_method]}</td>
                     <td className="secondary small">{t.account}</td>
-                    <td className={`num ${t.amount > 0 ? "amount-in" : ""}`}>
+                    <td className={`num amount ${t.amount > 0 ? "amount-in" : ""}`}>
                       {t.amount > 0 ? "+" : ""}{money(t.amount)}
+                    </td>
+                    <td className="num">
+                      <button
+                        className="btn btn-sm"
+                        disabled={saving === t.id}
+                        onClick={() => toggleExcluded(t)}
+                        title={t.excluded ? "Count this in totals again" : "Leave this out of every total, chart and savings figure"}
+                        aria-label={`${t.excluded ? "Add back to budget" : "Remove from budget"}: ${t.merchant}`}
+                      >
+                        {t.excluded ? "Add back" : "Exclude"}
+                      </button>
                     </td>
                   </tr>
                 ))}

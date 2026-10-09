@@ -11,6 +11,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
   const [category, setCategory] = useState("");
   const [match, setMatch] = useState<Rule["match"]>("contains");
   const [kind, setKind] = useState<Kind | "">("");
+  const [exclude, setExclude] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
@@ -22,8 +23,9 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
     setError(undefined);
     setMessage(undefined);
     try {
-      const r = await api.addRule({ pattern: pattern.trim(), category: category.trim(), match, kind: kind || null });
-      setMessage(`Rule added — it now categorizes ${r.matched} transaction${r.matched === 1 ? "" : "s"}.`);
+      const r = await api.addRule({ pattern: pattern.trim(), category: category.trim(), match, kind: kind || null, exclude });
+      const n = `${r.matched} transaction${r.matched === 1 ? "" : "s"}`;
+      setMessage(exclude ? `Rule added. ${n} are now excluded from the budget.` : `Rule added. It now categorizes ${n}.`);
       setPattern("");
       onDataChanged();
     } catch (err) {
@@ -76,6 +78,10 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
               {meta.kinds.map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
             </select>
           </label>
+          <label className="field" style={{ alignSelf: "center", display: "flex", gap: 6, alignItems: "center", paddingTop: 18 }}>
+            <input type="checkbox" checked={exclude} onChange={(e) => setExclude(e.target.checked)} />
+            Exclude from budget
+          </label>
           <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add rule"}</button>
         </form>
         {message && <div className="notice notice-info" style={{ marginTop: 12, marginBottom: 0 }}>{message}</div>}
@@ -90,7 +96,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Pattern</th><th>Category</th><th>Treat as</th><th /></tr>
+                  <tr><th>Pattern</th><th>Category</th><th>Treat as</th><th>Budget</th><th /></tr>
                 </thead>
                 <tbody>
                   {rules.data.map((r) => (
@@ -101,6 +107,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
                       </td>
                       <td>{r.category}</td>
                       <td className="secondary">{r.kind ? KIND_LABELS[r.kind] : "Automatic"}</td>
+                      <td>{r.exclude ? <span className="badge badge-warn">⊘ Excluded</span> : <span className="secondary">Counted</span>}</td>
                       <td className="num">
                         <button className="btn btn-sm" onClick={() => remove(r.id)} aria-label={`Delete rule ${r.pattern}`}>
                           Delete

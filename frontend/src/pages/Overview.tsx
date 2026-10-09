@@ -28,6 +28,10 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
 
   const overview = useAsync(() => api.overview(scope), [scopeKey, version]);
   const monthly = useAsync(() => api.monthly(scope), [scopeKey, version]);
+  // Income and savings only make sense across every account, so they ignore the account filter.
+  const scoped = scopeKey !== "{}";
+  const allOverview = useAsync(() => (scoped ? api.overview() : Promise.resolve(undefined)), [scoped, version]);
+  const allMonthly = useAsync(() => (scoped ? api.monthly() : Promise.resolve(undefined)), [scoped, version]);
   const months = monthly.data ?? [];
   const selectedMonth =
     pickedMonth && months.some((m) => m.month === pickedMonth) ? pickedMonth : months.at(-1)?.month;
@@ -91,8 +95,9 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
   const onSelectMonth = useCallback((m: string) => setPickedMonth(m), []);
 
   if (overview.error) return <ErrorNotice error={overview.error} onRetry={overview.reload} />;
-  if (!overview.data || !monthly.data) return <Loading />;
+  if (!overview.data || !monthly.data || (scoped && (!allOverview.data || !allMonthly.data))) return <Loading />;
   const o = overview.data;
+  const all = scoped ? allOverview.data! : o;
   if (o.months === 0) {
     return <div className="empty card"><h2>No spending in this view</h2>Try clearing the filters above.</div>;
   }
@@ -101,6 +106,8 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
   const prevIdx = months.findIndex((m) => m.month === selectedMonth) - 1;
   const previous = prevIdx >= 0 ? months[prevIdx] : undefined;
   const delta = current ? change(current.spending, previous?.spending) : null;
+  const flow = (scoped ? allMonthly.data! : months).find((m) => m.month === selectedMonth);
+  const allNote = scoped ? " · all accounts" : "";
   const maxCategory = Math.max(...(categories.data ?? []).map((c) => c.spending), 1);
 
   return (
@@ -115,31 +122,47 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
         </div>
       )}
 
+      {o.excluded_count > 0 && (
+        <div className="notice notice-info">
+          {o.excluded_count} transaction{o.excluded_count === 1 ? "" : "s"} ({money(o.excluded_amount)}){" "}
+          {o.excluded_count === 1 ? "is" : "are"} excluded from these totals.{" "}
+          <a href="#/transactions" onClick={(e) => { e.preventDefault(); onDrill({ excluded: true }); }}>
+            Review
+          </a>
+        </div>
+      )}
+
       <div className="tiles">
+        <StatTile
+          label="Average monthly income"
+          value={moneyWhole(all.average_monthly_income)}
+          foot={flow ? `${monthLabel(flow.month)}: ${moneyWhole(flow.income)}${allNote}` : allNote.slice(3)}
+        />
         <StatTile
           label="Average monthly spending"
           value={moneyWhole(o.average_monthly_spending)}
-          foot={`Across ${o.average_basis_months ?? o.months} month${(o.average_basis_months ?? o.months) === 1 ? "" : "s"}, net of refunds`}
-        />
-        <StatTile
-          label={current ? `Spent in ${monthLabel(current.month)}` : "Spent"}
-          value={moneyWhole(current?.spending ?? 0)}
           foot={
-            delta === null ? "No previous month to compare" : (
-              <span className={delta > 0 ? "delta-up" : "delta-down"}>
-                {delta > 0 ? "▲" : "▼"} {percent(Math.abs(delta))} {delta > 0 ? "more" : "less"} than{" "}
-                {previous && monthLabel(previous.month, true)}
-              </span>
-            )
+            <>
+              {current && `${monthLabel(current.month)}: ${moneyWhole(current.spending)} `}
+              {delta !== null && (
+                <span className={delta > 0 ? "delta-up" : "delta-down"}>
+                  {delta > 0 ? "▲" : "▼"} {percent(Math.abs(delta))} vs {previous && monthLabel(previous.month, true)}
+                </span>
+              )}
+            </>
           }
         />
         <StatTile
-          label="Average monthly income"
-          value={moneyWhole(o.average_monthly_income)}
+          label="Saved per month"
+          value={moneyWhole(all.average_monthly_savings)}
           foot={
-            o.average_monthly_income > 0
-              ? `${moneyWhole(o.average_monthly_income - o.average_monthly_spending)} left over per month`
-              : "No income found in this view"
+            all.savings_rate === null ? "No income found" : (
+              <>
+                {percent(all.savings_rate)} of income
+                {flow && <> · {monthLabel(flow.month, true)}: <span className={flow.savings >= 0 ? "delta-down" : "delta-up"}>{moneyWhole(flow.savings)}</span></>}
+                {allNote}
+              </>
+            )
           }
         />
         <StatTile
@@ -263,18 +286,22 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
                 total={current.spending}
               />
             </Card>
-            <Card title="Cash flow" sub={monthLabel(current.month)}>
-              <dl className="kv">
-                <dt>Income</dt><dd>{money(current.income)}</dd>
-                <dt>Spending</dt><dd>{money(current.spending)}</dd>
-                <dt>Refunds included</dt><dd>{money(current.refunds)}</dd>
-                <dt>Left over</dt>
-                <dd className={current.net_cashflow >= 0 ? "delta-down" : "delta-up"}>
-                  <strong>{money(current.net_cashflow)}</strong>
-                </dd>
-                <dt>Moved between accounts</dt><dd className="secondary">{money(current.transfers)}</dd>
-              </dl>
-            </Card>
+            {flow && (
+              <Card title="Income, spending & savings" sub={`${monthLabel(flow.month)}${allNote}`}>
+                <dl className="kv">
+                  <dt>Income</dt><dd>{money(flow.income)}</dd>
+                  <dt>Spending</dt><dd>{money(flow.spending)}</dd>
+                  <dt>{flow.savings >= 0 ? "Saved" : "Overspent"}</dt>
+                  <dd className={flow.savings >= 0 ? "delta-down" : "delta-up"}>
+                    <strong>{money(flow.savings)}</strong>
+                    {flow.savings_rate !== null && <span className="secondary"> ({percent(flow.savings_rate)} of income)</span>}
+                  </dd>
+                  <dt>Total saved so far</dt><dd>{money(flow.cumulative_savings)}</dd>
+                  <dt>Moved between accounts</dt><dd className="secondary">{money(flow.transfers)}</dd>
+                </dl>
+                <a href="#/income" className="small">See income & savings →</a>
+              </Card>
+            )}
           </div>
         </div>
       )}

@@ -177,6 +177,7 @@ def normalize_merchant(description: str) -> str:
         if new == d:
             break
         d = new
+    d = re.sub(r"\b(PPD|CCD|WEB|TEL)\s+ID\b.*$|\b(PPD|CCD|DES|INDN|CO ID|ID)\s*:.*$", " ", d)  # ACH trailers
     d = re.sub(r"\b\d{1,2}/\d{1,2}(/\d{2,4})?\b", " ", d)  # dates
     d = re.sub(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", " ", d)  # phone numbers
     d = re.sub(r"\.(COM|NET|ORG|CO)\b", " ", d)
@@ -212,6 +213,7 @@ class UserRule:
     category: str
     match: str = "contains"  # contains | regex
     kind: str | None = None  # optionally force a kind (expense / income / transfer / refund)
+    exclude: bool = False  # drop matching transactions from budget totals
 
     def compiled(self) -> re.Pattern | None:
         try:
@@ -223,7 +225,7 @@ class UserRule:
 
     def to_dict(self) -> dict:
         return {"id": self.id, "pattern": self.pattern, "category": self.category,
-                "match": self.match, "kind": self.kind}
+                "match": self.match, "kind": self.kind, "exclude": self.exclude}
 
 
 @dataclass
@@ -231,6 +233,7 @@ class Classification:
     category: str
     kind: Kind
     category_source: str
+    excluded: bool = False
 
 
 def _map_source_category(source_category: str | None) -> str | None:
@@ -269,7 +272,7 @@ def classify(description: str, amount: float, account_type: AccountType, source_
                     kind = Kind.INCOME
                 else:
                     kind = _default_kind(amount, account_type, description)
-            return Classification(rule.category, kind, "rule")
+            return Classification(rule.category, kind, "rule", excluded=rule.exclude)
 
     for rule in BUILTIN_RULES:
         if rule.direction != "any" and rule.direction != direction:

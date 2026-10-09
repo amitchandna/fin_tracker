@@ -27,10 +27,15 @@ class RuleIn(BaseModel):
     category: str = Field(min_length=1, max_length=60)
     match: Literal["contains", "regex"] = "contains"
     kind: Literal["expense", "income", "transfer", "refund"] | None = None
+    exclude: bool = False
 
 
-class CategoryUpdate(BaseModel):
+class TransactionUpdate(BaseModel):
+    """Only the fields sent are changed. ``category: null`` resets to automatic;
+    ``excluded: null`` clears a manual choice so rules decide again."""
+
     category: str | None = Field(default=None, max_length=60)
+    excluded: bool | None = None
 
 
 class SourceSettingsIn(BaseModel):
@@ -55,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  category: list[str] | None = None, account: list[str] | None = None,
                  payment_method: list[str] | None = None, account_type: list[str] | None = None,
                  kind: list[str] | None = None, recurring: bool | None = None,
-                 q: str | None = None) -> list[Transaction]:
+                 q: str | None = None, excluded: bool | None = None) -> list[Transaction]:
         txns = ledger.snapshot().transactions
         out = []
         ql = q.lower() if q else None
@@ -77,6 +82,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if kind and t.kind.value not in kind:
                 continue
             if recurring is not None and t.is_recurring != recurring:
+                continue
+            if excluded is not None and t.excluded != excluded:
                 continue
             if ql and ql not in t.description.lower() and ql not in t.merchant.lower() and ql not in t.category.lower():
                 continue
@@ -135,26 +142,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         category: list[str] | None = Query(None), account: list[str] | None = Query(None),
         payment_method: list[str] | None = Query(None), account_type: list[str] | None = Query(None),
         kind: list[str] | None = Query(None), recurring: bool | None = None, q: str | None = None,
+        excluded: bool | None = None,
         sort: Literal["date", "-date", "amount", "-amount", "category", "merchant"] = "-date",
         limit: int = Query(100, ge=1, le=5000), offset: int = Query(0, ge=0),
     ):
-        txns = filtered(month, start, end, category, account, payment_method, account_type, kind, recurring, q)
+        txns = filtered(month, start, end, category, account, payment_method, account_type, kind, recurring, q,
+                        excluded)
         key, reverse = sort.lstrip("-"), sort.startswith("-")
         sorters = {"date": lambda t: (t.date, t.id), "amount": lambda t: abs(t.amount),
                    "category": lambda t: t.category, "merchant": lambda t: t.merchant.lower()}
         txns = sorted(txns, key=sorters[key], reverse=reverse)
-        total_spend = sum(analytics.spend_value(t) for t in txns)
+        total_spend = sum(analytics.spend_value(t) for t in analytics.budgeted(txns))
         return {
             "total": len(txns),
+            "excluded": sum(1 for t in txns if t.excluded),
             "net_spending": round(total_spend, 2),
             "items": [t.to_dict() for t in txns[offset: offset + limit]],
         }
 
     @app.patch("/api/transactions/{txn_id}")
-    def update_transaction(txn_id: str, body: CategoryUpdate):
+    def update_transaction(txn_id: str, body: TransactionUpdate):
         if not any(t.id == txn_id for t in ledger.snapshot().transactions):
             raise HTTPException(404, "Transaction not found")
-        state.set_override(txn_id, body.category)
+        if "category" in body.model_fields_set:
+            state.set_override(txn_id, body.category)
+        if "excluded" in body.model_fields_set:
+            state.set_excluded(txn_id, body.excluded)
         txn = next(t for t in ledger.snapshot().transactions if t.id == txn_id)
         return txn.to_dict()
 
@@ -164,7 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         txns = filtered(month=month, account=account, payment_method=payment_method)
         buf = io.StringIO()
         fields = ["date", "description", "merchant", "amount", "category", "kind", "payment_method",
-                  "account", "account_type", "is_recurring", "source_file"]
+                  "account", "account_type", "is_recurring", "excluded", "source_file"]
         w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         for t in sorted(txns, key=lambda t: t.date):
@@ -197,6 +210,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         account_type=account_type)
         return analytics.category_breakdown(txns)
 
+    @app.get("/api/summary/income")
+    def summary_income(month: str | None = None, start: date | None = None, end: date | None = None,
+                       account: list[str] | None = Query(None)):
+        txns = filtered(month=month, start=start, end=end, account=account)
+        return analytics.income_sources(txns)
+
     @app.get("/api/recurring")
     def recurring(include_inactive: bool = True):
         series = ledger.snapshot().recurring
@@ -215,7 +234,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 re.compile(body.pattern)
             except re.error as exc:
                 raise HTTPException(422, f"Invalid regular expression: {exc}") from exc
-        rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind)
+        rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind, body.exclude)
         pattern = rule.compiled()
         matched = sum(1 for t in ledger.snapshot().transactions
                       if t.category_source == "rule" and pattern and pattern.search(t.description))

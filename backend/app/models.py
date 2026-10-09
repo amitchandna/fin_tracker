@@ -51,6 +51,8 @@ class Transaction:
     category_source: str = "auto"  # auto | rule | source | manual
     is_recurring: bool = False
     recurring_id: str | None = None
+    excluded: bool = False  # scrubbed from every budget total, still listed
+    excluded_source: str | None = None  # manual | rule
 
     @property
     def month(self) -> str:
@@ -78,6 +80,8 @@ class Transaction:
             "source_category": self.source_category,
             "is_recurring": self.is_recurring,
             "recurring_id": self.recurring_id,
+            "excluded": self.excluded,
+            "excluded_source": self.excluded_source,
         }
 
 

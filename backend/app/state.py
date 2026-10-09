@@ -18,7 +18,7 @@ class StateStore:
         self.path = state_dir / "state.json"
         self._lock = threading.RLock()
         self.version = 0
-        self._data = {"rules": [], "overrides": {}, "sources": {}}
+        self._data = {"rules": [], "overrides": {}, "sources": {}, "excluded": {}}
         self._load()
 
     def _load(self) -> None:
@@ -45,9 +45,11 @@ class StateStore:
         with self._lock:
             return [UserRule(**r) for r in self._data["rules"]]
 
-    def add_rule(self, pattern: str, category: str, match: str = "contains", kind: str | None = None) -> UserRule:
+    def add_rule(self, pattern: str, category: str, match: str = "contains", kind: str | None = None,
+                 exclude: bool = False) -> UserRule:
         with self._lock:
-            rule = UserRule(id=uuid.uuid4().hex[:10], pattern=pattern, category=category, match=match, kind=kind)
+            rule = UserRule(id=uuid.uuid4().hex[:10], pattern=pattern, category=category, match=match, kind=kind,
+                            exclude=exclude)
             # Newest rules win, so they go first.
             self._data["rules"].insert(0, rule.to_dict())
             self._save()
@@ -73,6 +75,21 @@ class StateStore:
                 self._data["overrides"][txn_id] = category
             else:
                 self._data["overrides"].pop(txn_id, None)
+            self._save()
+
+    # Exclusions ----------------------------------------------------------------
+    def excluded(self) -> dict[str, bool]:
+        """Per-transaction budget exclusion: True = scrubbed, False = kept despite a rule."""
+        with self._lock:
+            return dict(self._data["excluded"])
+
+    def set_excluded(self, txn_id: str, excluded: bool | None) -> None:
+        """``None`` clears the manual choice so rules decide again."""
+        with self._lock:
+            if excluded is None:
+                self._data["excluded"].pop(txn_id, None)
+            else:
+                self._data["excluded"][txn_id] = bool(excluded)
             self._save()
 
     # Source settings ---------------------------------------------------------

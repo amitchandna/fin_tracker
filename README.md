@@ -12,6 +12,14 @@ your money goes each month, across all of your accounts.
 - **No double counting.** Paying your credit card from checking is a *transfer*, not
   spending, and so are moves between your own accounts. Refunds reduce spending in the
   category they came from.
+- **Income and savings.** Shows how much comes in each month and from where (paychecks,
+  interest, tax refunds). Whatever comes in and isn't spent is counted as saved, so you get
+  monthly savings, your savings rate and a running total saved. Transfers to your savings or
+  investment accounts aren't spending, so they count as saved too.
+- **Exclude anything from the budget.** A one-off that doesn't belong (a reimbursed work trip,
+  buying a car, money you moved for someone else) can be left out of every total, chart and
+  savings figure with one click. It stays visible in the transaction list and you can add it
+  back any time. A rule can also exclude every matching transaction automatically.
 - **Recurring payments** (subscriptions, rent, utilities, insurance, loans) are detected from
   regular charges with consistent amounts. Each one shows its frequency, monthly cost, the
   card or account it bills to, and when the next charge is expected.
@@ -78,6 +86,12 @@ Each transaction gets three labels:
 - **Category**: picked by the first match in this order: your manual override → your rules →
   ~500 built-in merchant keywords → the bank's own category → `Uncategorized`.
 
+On top of these, a transaction can be **excluded from the budget**, either by you or by a
+rule. Excluded transactions don't count toward spending, income, savings or recurring
+detection, but you can still see them on the Transactions tab.
+
+**Savings** for a month = income − spending. That assumes whatever wasn't spent was kept.
+
 ## Architecture
 
 ```
@@ -104,8 +118,9 @@ elsewhere, set `FIN_TRACKER_STATE_DIR`.
 | `GET /api/summary/overview` | headline numbers |
 | `GET /api/summary/monthly` | per-month totals with breakdowns by category, payment method, account, recurring |
 | `GET /api/summary/categories?month=YYYY-MM` | category breakdown |
-| `GET /api/transactions` | filter by `month`, `category`, `account`, `payment_method`, `account_type`, `kind`, `recurring`, `q`; sort and paginate |
-| `PATCH /api/transactions/{id}` | set or reset a category |
+| `GET /api/summary/income?month=YYYY-MM` | income by source |
+| `GET /api/transactions` | filter by `month`, `category`, `account`, `payment_method`, `account_type`, `kind`, `recurring`, `excluded`, `q`; sort and paginate |
+| `PATCH /api/transactions/{id}` | set or reset a category (`category`), exclude from or add back to the budget (`excluded`) |
 | `GET /api/transactions/export` | categorized CSV export |
 | `GET /api/recurring` | detected recurring payments |
 | `GET/POST/DELETE /api/rules` | custom categorization rules |

@@ -19,10 +19,14 @@ export interface Transaction {
   source_category: string | null;
   is_recurring: boolean;
   recurring_id: string | null;
+  /** Scrubbed from every budget total (still listed). */
+  excluded: boolean;
+  excluded_source: "manual" | "rule" | null;
 }
 
 export interface TransactionPage {
   total: number;
+  excluded: number;
   net_spending: number;
   items: Transaction[];
 }
@@ -36,6 +40,11 @@ export interface MonthSummary {
   refunds: number;
   income: number;
   net_cashflow: number;
+  /** income - spending: what's assumed saved this month */
+  savings: number;
+  /** savings / income, or null when there was no income */
+  savings_rate: number | null;
+  cumulative_savings: number;
   transfers: number;
   recurring: number;
   one_time: number;
@@ -44,6 +53,19 @@ export interface MonthSummary {
   by_payment_method: Breakdown;
   by_account: Breakdown;
   by_account_type: Breakdown;
+  by_income_source: Breakdown;
+}
+
+export interface IncomeSource {
+  source: string;
+  category: string;
+  amount: number;
+  transactions: number;
+  share: number;
+  accounts: string[];
+  months_received: number;
+  average_monthly: number;
+  last_date: string;
 }
 
 export interface CategoryRow {
@@ -72,6 +94,13 @@ export interface Overview {
   top_categories: CategoryRow[];
   by_payment_method: Breakdown;
   uncategorized: number;
+  total_savings: number;
+  average_monthly_savings: number;
+  savings_rate: number | null;
+  months_saved: number;
+  months_overspent: number;
+  excluded_count: number;
+  excluded_amount: number;
 }
 
 export interface RecurringSeries {
@@ -116,6 +145,7 @@ export interface Rule {
   category: string;
   match: "contains" | "regex";
   kind: Kind | null;
+  exclude: boolean;
 }
 
 export interface Meta {
