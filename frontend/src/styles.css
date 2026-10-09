@@ -145,6 +145,8 @@ tr.clickable { cursor: pointer; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .desc { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .amount-in { color: var(--good-ink); }
+tr.excluded > td:not(:last-child) { opacity: 0.55; }
+tr.excluded td.amount { text-decoration: line-through; }
 
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; flex: none; }
 .share-bar { height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; min-width: 60px; }
