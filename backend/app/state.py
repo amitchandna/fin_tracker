@@ -13,6 +13,48 @@ from pathlib import Path
 from .categorizer import UserRule
 
 
+def fingerprint(date: str, amount: float, description: str, occurrence: int = 0) -> str:
+    """Identity of a transaction that doesn't depend on file or account names."""
+    return f"{date}|{amount:.2f}|{' '.join(description.lower().split())}|{occurrence}"
+
+
+class Marks:
+    """Lookup for per-transaction choices: by ID first, then by fingerprint, so a
+    choice survives renaming a file or an account."""
+
+    def __init__(self, records: dict[str, dict]):
+        self.by_id = records
+        by_fp: dict[str, dict | None] = {}
+        for rec in records.values():
+            fp = rec.get("fingerprint")
+            if fp:
+                # Two marks with the same fingerprint are ambiguous; match neither.
+                by_fp[fp] = None if fp in by_fp else rec
+        self.by_fp = {k: v for k, v in by_fp.items() if v is not None}
+
+    def get(self, txn_id: str, fp: str) -> dict | None:
+        return self.by_id.get(txn_id) or self.by_fp.get(fp)
+
+    def __len__(self) -> int:
+        return len(self.by_id)
+
+
+def _record(value, key: str, txn: dict | None) -> dict:
+    rec = {key: value}
+    if txn:
+        rec.update({
+            "date": txn["date"], "amount": txn["amount"], "description": txn["description"],
+            "account": txn["account"],
+            "fingerprint": fingerprint(txn["date"], txn["amount"], txn["description"], txn.get("occurrence", 0)),
+        })
+    return rec
+
+
+def _upgrade(records: dict, key: str) -> dict[str, dict]:
+    # Older state files stored bare values ({id: "Dining"}); keep reading them.
+    return {k: (v if isinstance(v, dict) else {key: v}) for k, v in records.items()}
+
+
 class StateStore:
     def __init__(self, state_dir: Path):
         self.path = state_dir / "state.json"
@@ -64,33 +106,43 @@ class StateStore:
             self._save()
             return True
 
-    # Overrides ---------------------------------------------------------------
-    def overrides(self) -> dict[str, str]:
+    # Per-transaction choices ---------------------------------------------------
+    # Each is stored with the transaction's date, amount and description, which keeps
+    # state.json readable and lets a choice find its transaction again if IDs change.
+    def overrides(self) -> Marks:
         with self._lock:
-            return dict(self._data["overrides"])
+            return Marks(_upgrade(self._data["overrides"], "category"))
 
-    def set_override(self, txn_id: str, category: str | None) -> None:
+    def set_override(self, txn_id: str, category: str | None, txn: dict | None = None) -> None:
         with self._lock:
             if category:
-                self._data["overrides"][txn_id] = category
+                self._data["overrides"][txn_id] = _record(category, "category", txn)
             else:
-                self._data["overrides"].pop(txn_id, None)
+                self._drop("overrides", txn_id, txn)
             self._save()
 
-    # Exclusions ----------------------------------------------------------------
-    def excluded(self) -> dict[str, bool]:
-        """Per-transaction budget exclusion: True = scrubbed, False = kept despite a rule."""
+    def excluded(self) -> Marks:
+        """Budget exclusion: True = scrubbed, False = kept despite a rule."""
         with self._lock:
-            return dict(self._data["excluded"])
+            return Marks(_upgrade(self._data["excluded"], "excluded"))
 
-    def set_excluded(self, txn_id: str, excluded: bool | None) -> None:
+    def set_excluded(self, txn_id: str, excluded: bool | None, txn: dict | None = None) -> None:
         """``None`` clears the manual choice so rules decide again."""
         with self._lock:
             if excluded is None:
-                self._data["excluded"].pop(txn_id, None)
+                self._drop("excluded", txn_id, txn)
             else:
-                self._data["excluded"][txn_id] = bool(excluded)
+                self._data["excluded"][txn_id] = _record(bool(excluded), "excluded", txn)
             self._save()
+
+    def _drop(self, section: str, txn_id: str, txn: dict | None) -> None:
+        records = self._data[section]
+        records.pop(txn_id, None)
+        if txn:
+            # The mark may live under an older ID and have matched by fingerprint.
+            fp = fingerprint(txn["date"], txn["amount"], txn["description"], txn.get("occurrence", 0))
+            for k in [k for k, v in records.items() if isinstance(v, dict) and v.get("fingerprint") == fp]:
+                records.pop(k)
 
     # Source settings ---------------------------------------------------------
     def source_settings(self) -> dict[str, dict]:

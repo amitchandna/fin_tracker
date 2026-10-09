@@ -25,7 +25,7 @@ from .state import StateStore
 class RuleIn(BaseModel):
     pattern: str = Field(min_length=1, max_length=200)
     category: str = Field(min_length=1, max_length=60)
-    match: Literal["contains", "regex"] = "contains"
+    match: Literal["contains", "regex", "merchant"] = "contains"
     kind: Literal["expense", "income", "transfer", "refund"] | None = None
     exclude: bool = False
 
@@ -100,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "data_dir": str(settings.data_dir),
             "data_dir_exists": settings.data_dir.is_dir(),
+            "state_file": str(state.path),
             "files": len(snap.sources),
             "transactions": len(snap.transactions),
             "loaded_at": snap.loaded_at.isoformat(timespec="seconds"),
@@ -162,14 +163,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.patch("/api/transactions/{txn_id}")
     def update_transaction(txn_id: str, body: TransactionUpdate):
-        if not any(t.id == txn_id for t in ledger.snapshot().transactions):
+        txn = next((t for t in ledger.snapshot().transactions if t.id == txn_id), None)
+        if txn is None:
             raise HTTPException(404, "Transaction not found")
+        ident = {**txn.to_dict(), "occurrence": txn.occurrence}
         if "category" in body.model_fields_set:
-            state.set_override(txn_id, body.category)
+            state.set_override(txn_id, body.category, ident)
         if "excluded" in body.model_fields_set:
-            state.set_excluded(txn_id, body.excluded)
-        txn = next(t for t in ledger.snapshot().transactions if t.id == txn_id)
-        return txn.to_dict()
+            state.set_excluded(txn_id, body.excluded, ident)
+        snap = ledger.snapshot()
+        txn = next(t for t in snap.transactions if t.id == txn_id)
+        # How many other transactions from this merchant differ, so the UI can offer to
+        # remember the choice for all of them (and future ones) with a merchant rule.
+        same = [t for t in snap.transactions if t.merchant == txn.merchant and t.id != txn.id]
+        return {
+            **txn.to_dict(),
+            "merchant_total": len(same),
+            "merchant_different_category": sum(1 for t in same if t.category != txn.category),
+            "merchant_different_excluded": sum(1 for t in same if t.excluded != txn.excluded),
+        }
 
     @app.get("/api/transactions/export")
     def export(month: str | None = None, account: list[str] | None = Query(None),
@@ -229,15 +241,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/rules", status_code=201)
     def add_rule(body: RuleIn):
+        if body.match == "merchant" and not any(
+                t.merchant.lower() == body.pattern.strip().lower() for t in ledger.snapshot().transactions):
+            raise HTTPException(422, f"No merchant named {body.pattern!r}")
         if body.match == "regex":
             try:
                 re.compile(body.pattern)
             except re.error as exc:
                 raise HTTPException(422, f"Invalid regular expression: {exc}") from exc
         rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind, body.exclude)
-        pattern = rule.compiled()
-        matched = sum(1 for t in ledger.snapshot().transactions
-                      if t.category_source == "rule" and pattern and pattern.search(t.description))
+        matched = sum(1 for t in ledger.snapshot().transactions if rule.matches(t.description))
         return {**rule.to_dict(), "matched": matched}
 
     @app.delete("/api/rules/{rule_id}", status_code=204)

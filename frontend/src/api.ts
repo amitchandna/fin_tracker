@@ -1,6 +1,6 @@
 import type {
   AppConfig, CategoryRow, IncomeSource, Meta, MonthSummary, Overview, RecurringSeries, Rule, ScopeFilter, Source,
-  Transaction, TransactionPage,
+  TransactionPage, TransactionUpdate,
 } from "./types";
 
 type Params = Record<string, string | number | boolean | string[] | undefined | null>;
@@ -54,10 +54,10 @@ export const api = {
   transactions: (params: Params) => request<TransactionPage>(`/api/transactions${toQuery(params)}`),
   exportUrl: (params: Params) => `/api/transactions/export${toQuery(params)}`,
   setCategory: (id: string, category: string | null) =>
-    request<Transaction>(`/api/transactions/${id}`, { method: "PATCH", body: JSON.stringify({ category }) }),
+    request<TransactionUpdate>(`/api/transactions/${id}`, { method: "PATCH", body: JSON.stringify({ category }) }),
   /** true = remove from budget, false = keep (overrides rules), null = let rules decide. */
   setExcluded: (id: string, excluded: boolean | null) =>
-    request<Transaction>(`/api/transactions/${id}`, { method: "PATCH", body: JSON.stringify({ excluded }) }),
+    request<TransactionUpdate>(`/api/transactions/${id}`, { method: "PATCH", body: JSON.stringify({ excluded }) }),
   recurring: () => request<RecurringSeries[]>("/api/recurring"),
   sources: () => request<Source[]>("/api/sources"),
   updateSource: (file: string, settings: Source["settings"]) =>

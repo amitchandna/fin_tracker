@@ -211,9 +211,15 @@ class UserRule:
     id: str
     pattern: str
     category: str
-    match: str = "contains"  # contains | regex
+    match: str = "contains"  # contains | regex | merchant (exact merchant name, as shown in the app)
     kind: str | None = None  # optionally force a kind (expense / income / transfer / refund)
     exclude: bool = False  # drop matching transactions from budget totals
+
+    def matches(self, description: str) -> bool:
+        if self.match == "merchant":
+            return normalize_merchant(description).lower() == self.pattern.strip().lower()
+        pat = self.compiled()
+        return bool(pat and pat.search(description))
 
     def compiled(self) -> re.Pattern | None:
         try:
@@ -262,8 +268,7 @@ def classify(description: str, amount: float, account_type: AccountType, source_
     direction = "in" if amount > 0 else "out"
 
     for rule in user_rules:
-        pat = rule.compiled()
-        if pat and pat.search(description):
+        if rule.matches(description):
             kind = Kind(rule.kind) if rule.kind in Kind._value2member_map_ else None
             if kind is None:
                 if rule.category in (CARD_PAYMENT, TRANSFERS):

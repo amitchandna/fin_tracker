@@ -11,9 +11,9 @@ from pathlib import Path
 
 from .categorizer import CARD_PAYMENT, INCOME, TRANSFERS, classify, detect_payment_method, normalize_merchant
 from .models import Kind, ParsedFile, Transaction
-from .parser import parse_csv_file
+from .parser import account_name_from_file, parse_csv_file
 from .recurring import RecurringSeries, detect_recurring
-from .state import StateStore
+from .state import StateStore, fingerprint
 
 
 @dataclass
@@ -120,7 +120,9 @@ class Ledger:
                 key = (row.date, round(row.amount, 2), row.description.lower())
                 n = occurrence.get(key, 0)
                 occurrence[key] = n + 1
-                tid = _txn_id(parsed.account, row.date.isoformat(), row.amount, row.description, n)
+                # IDs come from the file name, not the display name, so renaming an account keeps them.
+                tid = _txn_id(account_name_from_file(path.name), row.date.isoformat(), row.amount,
+                              row.description, n)
                 if tid in seen_ids:
                     # Overlapping exports of the same account (e.g. Jan-Mar and Feb-Apr).
                     duplicates += 1
@@ -129,12 +131,15 @@ class Ledger:
 
                 c = classify(row.description, row.amount, parsed.account_type, row.source_category, rules)
                 category, kind, category_source = c.category, c.kind, c.category_source
-                if tid in overrides:
-                    category, category_source = overrides[tid], "manual"
+                fp = fingerprint(row.date.isoformat(), row.amount, row.description, n)
+                override = overrides.get(tid, fp)
+                if override and override.get("category"):
+                    category, category_source = override["category"], "manual"
                     kind = _kind_for_manual(category, row.amount, kind)
                 excluded, excluded_source = c.excluded, ("rule" if c.excluded else None)
-                if tid in exclusions:
-                    excluded, excluded_source = exclusions[tid], "manual"
+                exclusion = exclusions.get(tid, fp)
+                if exclusion and "excluded" in exclusion:
+                    excluded, excluded_source = bool(exclusion["excluded"]), "manual"
 
                 transactions.append(Transaction(
                     id=tid,
@@ -152,6 +157,7 @@ class Ledger:
                     category_source=category_source,
                     excluded=excluded,
                     excluded_source=excluded_source if excluded else None,
+                    occurrence=n,
                 ))
                 dates.append(row.date)
                 added += 1

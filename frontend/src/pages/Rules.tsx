@@ -52,7 +52,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
       >
         <form className="form-row" onSubmit={submit}>
           <label className="field" style={{ flex: "2 1 220px" }}>
-            When the description {match === "regex" ? "matches the pattern" : "contains"}
+            {match === "regex" ? "When the description matches the pattern" : match === "merchant" ? "When the merchant is" : "When the description contains"}
             <input className="input" value={pattern} onChange={(e) => setPattern(e.target.value)}
                    placeholder={match === "regex" ? "e.g. ^SQ \\*JOE" : "e.g. JOE'S COFFEE"} required />
           </label>
@@ -68,6 +68,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
             Match type
             <select className="select" value={match} onChange={(e) => setMatch(e.target.value as Rule["match"])}>
               <option value="contains">Contains text</option>
+              <option value="merchant">Exact merchant</option>
               <option value="regex">Regular expression</option>
             </select>
           </label>
@@ -103,7 +104,7 @@ export function Rules({ meta, version, onDataChanged }: { meta: Meta; version: n
                     <tr key={r.id}>
                       <td>
                         <span className="mono">{r.pattern}</span>
-                        {r.match === "regex" && <span className="badge" style={{ marginLeft: 6 }}>regex</span>}
+                        {r.match !== "contains" && <span className="badge" style={{ marginLeft: 6 }}>{r.match}</span>}
                       </td>
                       <td>{r.category}</td>
                       <td className="secondary">{r.kind ? KIND_LABELS[r.kind] : "Automatic"}</td>

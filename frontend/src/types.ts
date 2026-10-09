@@ -24,6 +24,13 @@ export interface Transaction {
   excluded_source: "manual" | "rule" | null;
 }
 
+/** PATCH result: the updated transaction plus how many others share its merchant. */
+export interface TransactionUpdate extends Transaction {
+  merchant_total: number;
+  merchant_different_category: number;
+  merchant_different_excluded: number;
+}
+
 export interface TransactionPage {
   total: number;
   excluded: number;
@@ -143,7 +150,7 @@ export interface Rule {
   id: string;
   pattern: string;
   category: string;
-  match: "contains" | "regex";
+  match: "contains" | "regex" | "merchant";
   kind: Kind | null;
   exclude: boolean;
 }
@@ -160,6 +167,8 @@ export interface Meta {
 export interface AppConfig {
   data_dir: string;
   data_dir_exists: boolean;
+  /** Where categories, exclusions and rules are saved. */
+  state_file: string;
   files: number;
   transactions: number;
   loaded_at: string;
