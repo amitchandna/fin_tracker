@@ -1,5 +1,5 @@
 import type {
-  AppConfig, CategoryRow, IncomeSource, Meta, MonthSummary, Overview, RecurringSeries, Rule, ScopeFilter, Source,
+  AppConfig, CategoryRow, ExpectedPay, IncomeSource, Meta, PaySchedule, PayScheduleInput, MonthSummary, Overview, RecurringSeries, Rule, ScopeFilter, Source,
   TransactionPage, TransactionUpdate,
 } from "./types";
 
@@ -50,6 +50,14 @@ export const api = {
   monthly: (s?: ScopeFilter) => request<MonthSummary[]>(`/api/summary/monthly${toQuery(scope(s))}`),
   categories: (month?: string, s?: ScopeFilter) =>
     request<CategoryRow[]>(`/api/summary/categories${toQuery({ month, ...scope(s) })}`),
+  paySchedules: () => request<PaySchedule[]>("/api/income/schedules"),
+  savePaySchedule: (s: PayScheduleInput, id?: string) =>
+    request<PaySchedule>(`/api/income/schedules${id ? `/${id}` : ""}`, {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(s),
+    }),
+  deletePaySchedule: (id: string) => request<void>(`/api/income/schedules/${id}`, { method: "DELETE" }),
+  expectedIncome: (month?: string) => request<ExpectedPay[]>(`/api/income/expected${toQuery({ month })}`),
   income: (month?: string) => request<IncomeSource[]>(`/api/summary/income${toQuery({ month })}`),
   transactions: (params: Params) => request<TransactionPage>(`/api/transactions${toQuery(params)}`),
   exportUrl: (params: Params) => `/api/transactions/export${toQuery(params)}`,
@@ -66,7 +74,7 @@ export const api = {
       body: JSON.stringify(settings),
     }),
   rules: () => request<Rule[]>("/api/rules"),
-  addRule: (rule: Omit<Rule, "id">) =>
+  addRule: (rule: Omit<Rule, "id" | "direction"> & { direction?: Rule["direction"] }) =>
     request<Rule & { matched: number }>("/api/rules", { method: "POST", body: JSON.stringify(rule) }),
   deleteRule: (id: string) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
 };

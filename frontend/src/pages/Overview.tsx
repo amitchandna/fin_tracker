@@ -122,6 +122,14 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
         </div>
       )}
 
+      {(all.needs_review ?? 0) > 0 && (
+        <div className="notice notice-warn">
+          {all.needs_review} deposit{all.needs_review === 1 ? "" : "s"} ({money(all.needs_review_amount ?? 0)}) need
+          {all.needs_review === 1 ? "s" : ""} a label: income, or someone paying you back?{" "}
+          <a href="#/income">Review on Income &amp; Savings</a>
+        </div>
+      )}
+
       {o.excluded_count > 0 && (
         <div className="notice notice-info">
           {o.excluded_count} transaction{o.excluded_count === 1 ? "" : "s"} ({money(o.excluded_amount)}){" "}

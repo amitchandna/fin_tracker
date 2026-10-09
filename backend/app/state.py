@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from .categorizer import UserRule
+from .paychecks import PaySchedule
 
 
 def fingerprint(date: str, amount: float, description: str, occurrence: int = 0) -> str:
@@ -60,7 +61,7 @@ class StateStore:
         self.path = state_dir / "state.json"
         self._lock = threading.RLock()
         self.version = 0
-        self._data = {"rules": [], "overrides": {}, "sources": {}, "excluded": {}}
+        self._data = {"rules": [], "overrides": {}, "sources": {}, "excluded": {}, "pay_schedules": []}
         self._load()
 
     def _load(self) -> None:
@@ -88,10 +89,10 @@ class StateStore:
             return [UserRule(**r) for r in self._data["rules"]]
 
     def add_rule(self, pattern: str, category: str, match: str = "contains", kind: str | None = None,
-                 exclude: bool = False) -> UserRule:
+                 exclude: bool = False, direction: str = "any") -> UserRule:
         with self._lock:
             rule = UserRule(id=uuid.uuid4().hex[:10], pattern=pattern, category=category, match=match, kind=kind,
-                            exclude=exclude)
+                            exclude=exclude, direction=direction)
             # Newest rules win, so they go first.
             self._data["rules"].insert(0, rule.to_dict())
             self._save()
@@ -143,6 +144,36 @@ class StateStore:
             fp = fingerprint(txn["date"], txn["amount"], txn["description"], txn.get("occurrence", 0))
             for k in [k for k, v in records.items() if isinstance(v, dict) and v.get("fingerprint") == fp]:
                 records.pop(k)
+
+    # Expected income ---------------------------------------------------------
+    def pay_schedules(self) -> list[PaySchedule]:
+        with self._lock:
+            return [PaySchedule(**p) for p in self._data["pay_schedules"]]
+
+    def save_pay_schedule(self, data: dict, schedule_id: str | None = None) -> PaySchedule | None:
+        """Create (no id) or replace (id) a pay schedule. Returns None for an unknown id."""
+        with self._lock:
+            items = self._data["pay_schedules"]
+            if schedule_id is None:
+                sched = PaySchedule(id=uuid.uuid4().hex[:10], **data)
+                items.append(sched.to_dict())
+            else:
+                idx = next((i for i, p in enumerate(items) if p["id"] == schedule_id), None)
+                if idx is None:
+                    return None
+                sched = PaySchedule(id=schedule_id, **data)
+                items[idx] = sched.to_dict()
+            self._save()
+            return sched
+
+    def delete_pay_schedule(self, schedule_id: str) -> bool:
+        with self._lock:
+            before = len(self._data["pay_schedules"])
+            self._data["pay_schedules"] = [p for p in self._data["pay_schedules"] if p["id"] != schedule_id]
+            if len(self._data["pay_schedules"]) == before:
+                return False
+            self._save()
+            return True
 
     # Source settings ---------------------------------------------------------
     def source_settings(self) -> dict[str, dict]:

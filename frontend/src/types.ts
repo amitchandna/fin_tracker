@@ -15,13 +15,15 @@ export interface Transaction {
   payment_method: PaymentMethod;
   kind: Kind;
   category: string;
-  category_source: "auto" | "rule" | "source" | "manual";
+  category_source: "auto" | "rule" | "source" | "manual" | "paycheck";
   source_category: string | null;
   is_recurring: boolean;
   recurring_id: string | null;
   /** Scrubbed from every budget total (still listed). */
   excluded: boolean;
   excluded_source: "manual" | "rule" | null;
+  /** Money in the app only guessed at: the user should say income or paid back. */
+  needs_review: boolean;
 }
 
 /** PATCH result: the updated transaction plus how many others share its merchant. */
@@ -29,6 +31,8 @@ export interface TransactionUpdate extends Transaction {
   merchant_total: number;
   merchant_different_category: number;
   merchant_different_excluded: number;
+  /** Other money in from this merchant still waiting for a label. */
+  merchant_needs_review: number;
 }
 
 export interface TransactionPage {
@@ -52,6 +56,8 @@ export interface MonthSummary {
   /** savings / income, or null when there was no income */
   savings_rate: number | null;
   cumulative_savings: number;
+  /** From your pay schedules; null when none cover this month. */
+  expected_income?: number | null;
   transfers: number;
   recurring: number;
   one_time: number;
@@ -108,6 +114,40 @@ export interface Overview {
   months_overspent: number;
   excluded_count: number;
   excluded_amount: number;
+  needs_review?: number;
+  needs_review_amount?: number;
+}
+
+export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
+
+export interface PaySchedule {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: PayFrequency;
+  anchor_date: string | null;
+  days: number[];
+  weekend: "before" | "after" | "none";
+  account: string | null;
+  match_text: string | null;
+  tolerance: number;
+  start_date: string | null;
+  end_date: string | null;
+  monthly_amount: number;
+}
+
+export type PayScheduleInput = Omit<PaySchedule, "id" | "monthly_amount">;
+
+export interface ExpectedPay {
+  schedule_id: string;
+  name: string;
+  date: string;
+  month: string;
+  amount: number;
+  status: "received" | "due" | "missed" | "upcoming";
+  transaction_id: string | null;
+  actual_amount: number | null;
+  actual_date: string | null;
 }
 
 export interface RecurringSeries {
@@ -153,6 +193,7 @@ export interface Rule {
   match: "contains" | "regex" | "merchant";
   kind: Kind | null;
   exclude: boolean;
+  direction?: "any" | "in" | "out";
 }
 
 export interface Meta {

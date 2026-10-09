@@ -54,6 +54,9 @@ def test_bad_regex_rule_ignored():
     ("SQ *BLUE BOTTLE COFFEE #12", "Blue Bottle Coffee"),
     ("DEBIT CARD PURCHASE SAFEWAY #1234", "Safeway"),
     ("APPLE.COM/BILL 866-712-7753 CA", "Apple Bill"),
+    ("ZELLE PAYMENT FROM ALEX KIM", "Zelle From Alex Kim"),
+    ("ZELLE PAYMENT TO JORDAN SMITH", "Zelle To Jordan Smith"),
+    ("VENMO CASHOUT", "Venmo Cashout"),
 ])
 def test_normalize_merchant(desc, expected):
     assert normalize_merchant(desc) == expected

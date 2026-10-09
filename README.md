@@ -16,6 +16,18 @@ your money goes each month, across all of your accounts.
   interest, tax refunds). Whatever comes in and isn't spent is counted as saved, so you get
   monthly savings, your savings rate and a running total saved. Transfers to your savings or
   investment accounts aren't spending, so they count as saved too.
+- **You decide what counts as income.** Every deposit is either **income** or **paid back**,
+  meaning money that offsets something you spent. A friend paying you $15 for their movie
+  ticket is paid back against Entertainment, so your Entertainment spending drops by $15
+  and your income doesn't inflate. The app guesses until you choose, and lists unconfirmed
+  deposits under *Money in to review*. One click can apply your choice to every deposit from
+  that sender, including future ones.
+- **Expected income.** Enter your paychecks: the amount that lands in your account and when.
+  Schedules can be weekly, every 2 weeks, twice a month (e.g. the 15th and last day) or
+  monthly, and paydays on weekends shift to the Friday before (or Monday after). The app shows
+  expected vs. actual income per month and flags any paycheck that didn't arrive. Deposits
+  that match a paycheck (within 4 days and ±10% by default) are confirmed as income
+  automatically.
 - **Exclude anything from the budget.** A one-off that doesn't belong (a reimbursed work trip,
   buying a car, money you moved for someone else) can be left out of every total, chart and
   savings figure with one click. It stays visible in the transaction list and you can add it
@@ -90,6 +102,10 @@ On top of these, a transaction can be **excluded from the budget**, either by yo
 rule. Excluded transactions don't count toward spending, income, savings or recurring
 detection, but you can still see them on the Transactions tab.
 
+**Money in** is either *income* (category `Income`) or *paid back*, which is any other
+category. Paid-back money reduces spending in that category. Deposits stay in the review
+queue until you label them, a rule labels them, or they match an expected paycheck.
+
 **Savings** for a month = income − spending. That assumes whatever wasn't spent was kept.
 
 ## Architecture
@@ -99,6 +115,7 @@ backend/                 FastAPI + stdlib csv (no pandas)
   app/parser.py          header detection, column mapping, amount/date parsing, sign normalisation
   app/categorizer.py     merchant normalisation, built-in rules, payment method, kind
   app/recurring.py       cadence + amount-consistency detection of recurring payments
+  app/paychecks.py       pay schedules -> expected paydays, matched to real deposits
   app/ledger.py          scans the folder, de-duplicates, caches until files/settings change
   app/analytics.py       monthly / category / overview aggregations
   app/state.py           your rules, overrides and per-file settings (JSON, atomic writes)
@@ -133,11 +150,13 @@ untouched as your record.
 | `GET /api/summary/monthly` | per-month totals with breakdowns by category, payment method, account, recurring |
 | `GET /api/summary/categories?month=YYYY-MM` | category breakdown |
 | `GET /api/summary/income?month=YYYY-MM` | income by source |
-| `GET /api/transactions` | filter by `month`, `category`, `account`, `payment_method`, `account_type`, `kind`, `recurring`, `excluded`, `q`; sort and paginate |
+| `GET /api/transactions` | filter by `month`, `category`, `account`, `payment_method`, `account_type`, `kind`, `recurring`, `excluded`, `needs_review`, `q`; sort and paginate |
 | `PATCH /api/transactions/{id}` | set or reset a category (`category`), exclude from or add back to the budget (`excluded`) |
 | `GET /api/transactions/export` | categorized CSV export |
+| `GET/POST /api/income/schedules`, `PUT/DELETE /api/income/schedules/{id}` | your expected paychecks |
+| `GET /api/income/expected?month=YYYY-MM` | expected paydays and whether each arrived |
 | `GET /api/recurring` | detected recurring payments |
-| `GET/POST/DELETE /api/rules` | custom rules (`contains`, `regex` or exact `merchant` match; optional `exclude`) |
+| `GET/POST/DELETE /api/rules` | custom rules (`contains`, `regex` or exact `merchant` match; optional `exclude`; `direction` limits a rule to money `in` or `out`) |
 | `GET /api/sources`, `PUT /api/sources/{file}` | detected files and per-file overrides |
 | `POST /api/rescan` | force a re-read |
 

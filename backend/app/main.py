@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import analytics
 from .categorizer import CATEGORIES
@@ -28,6 +28,7 @@ class RuleIn(BaseModel):
     match: Literal["contains", "regex", "merchant"] = "contains"
     kind: Literal["expense", "income", "transfer", "refund"] | None = None
     exclude: bool = False
+    direction: Literal["any", "in", "out"] = "any"
 
 
 class TransactionUpdate(BaseModel):
@@ -36,6 +37,40 @@ class TransactionUpdate(BaseModel):
 
     category: str | None = Field(default=None, max_length=60)
     excluded: bool | None = None
+
+
+class PayScheduleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    amount: float = Field(gt=0, description="Take-home amount that lands in your account")
+    frequency: Literal["weekly", "biweekly", "semimonthly", "monthly"]
+    anchor_date: date | None = None
+    days: list[int] = Field(default_factory=list)
+    weekend: Literal["before", "after", "none"] = "before"
+    account: str | None = Field(default=None, max_length=80)
+    match_text: str | None = Field(default=None, max_length=80)
+    tolerance: float = Field(default=0.1, ge=0, le=1)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def check_schedule(self):
+        if self.frequency in ("weekly", "biweekly") and not self.anchor_date:
+            raise ValueError("Weekly and every-2-weeks pay needs one example payday (anchor_date)")
+        need = {"semimonthly": 2, "monthly": 1}.get(self.frequency)
+        if need and (len(self.days) != need or any(not 1 <= d <= 31 for d in self.days)):
+            raise ValueError(f"{self.frequency} pay needs {need} day(s) of the month between 1 and 31")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date is before start_date")
+        return self
+
+    def to_state(self) -> dict:
+        d = self.model_dump()
+        for k in ("anchor_date", "start_date", "end_date"):
+            d[k] = d[k].isoformat() if d[k] else None
+        d["days"] = sorted(d["days"])
+        d["account"] = d["account"] or None
+        d["match_text"] = (d["match_text"] or "").strip() or None
+        return d
 
 
 class SourceSettingsIn(BaseModel):
@@ -60,7 +95,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  category: list[str] | None = None, account: list[str] | None = None,
                  payment_method: list[str] | None = None, account_type: list[str] | None = None,
                  kind: list[str] | None = None, recurring: bool | None = None,
-                 q: str | None = None, excluded: bool | None = None) -> list[Transaction]:
+                 q: str | None = None, excluded: bool | None = None,
+                 needs_review: bool | None = None) -> list[Transaction]:
         txns = ledger.snapshot().transactions
         out = []
         ql = q.lower() if q else None
@@ -84,6 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if recurring is not None and t.is_recurring != recurring:
                 continue
             if excluded is not None and t.excluded != excluded:
+                continue
+            if needs_review is not None and t.needs_review != needs_review:
                 continue
             if ql and ql not in t.description.lower() and ql not in t.merchant.lower() and ql not in t.category.lower():
                 continue
@@ -143,12 +181,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         category: list[str] | None = Query(None), account: list[str] | None = Query(None),
         payment_method: list[str] | None = Query(None), account_type: list[str] | None = Query(None),
         kind: list[str] | None = Query(None), recurring: bool | None = None, q: str | None = None,
-        excluded: bool | None = None,
+        excluded: bool | None = None, needs_review: bool | None = None,
         sort: Literal["date", "-date", "amount", "-amount", "category", "merchant"] = "-date",
         limit: int = Query(100, ge=1, le=5000), offset: int = Query(0, ge=0),
     ):
         txns = filtered(month, start, end, category, account, payment_method, account_type, kind, recurring, q,
-                        excluded)
+                        excluded, needs_review)
         key, reverse = sort.lstrip("-"), sort.startswith("-")
         sorters = {"date": lambda t: (t.date, t.id), "amount": lambda t: abs(t.amount),
                    "category": lambda t: t.category, "merchant": lambda t: t.merchant.lower()}
@@ -175,12 +213,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         txn = next(t for t in snap.transactions if t.id == txn_id)
         # How many other transactions from this merchant differ, so the UI can offer to
         # remember the choice for all of them (and future ones) with a merchant rule.
-        same = [t for t in snap.transactions if t.merchant == txn.merchant and t.id != txn.id]
+        same = [t for t in snap.transactions if t.merchant == txn.merchant and t.id != txn.id
+                and (t.amount > 0) == (txn.amount > 0)]
         return {
             **txn.to_dict(),
             "merchant_total": len(same),
             "merchant_different_category": sum(1 for t in same if t.category != txn.category),
             "merchant_different_excluded": sum(1 for t in same if t.excluded != txn.excluded),
+            "merchant_needs_review": sum(1 for t in same if t.needs_review),
         }
 
     @app.get("/api/transactions/export")
@@ -204,7 +244,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         snap = ledger.snapshot()
         ids = {t.id for t in txns}
         recurring = [s for s in snap.recurring if any(i in ids for i in s.transaction_ids)]
-        return analytics.overview(txns, recurring)
+        result = analytics.overview(txns, recurring)
+        result["needs_review"] = sum(1 for t in txns if t.needs_review)
+        result["needs_review_amount"] = round(sum(t.amount for t in txns if t.needs_review), 2)
+        return result
 
     @app.get("/api/summary/monthly")
     def summary_monthly(start: date | None = None, end: date | None = None,
@@ -212,7 +255,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         account_type: list[str] | None = Query(None), category: list[str] | None = Query(None)):
         txns = filtered(start=start, end=end, account=account, payment_method=payment_method,
                         account_type=account_type, category=category)
-        return analytics.monthly_summary(txns)
+        months = analytics.monthly_summary(txns)
+        # Expected income comes from your pay schedules, so it ignores account filters.
+        expected: dict[str, float] = {}
+        for e in ledger.snapshot().expected:
+            key = e.date.strftime("%Y-%m")
+            expected[key] = expected.get(key, 0.0) + e.amount
+        for mo in months:
+            mo["expected_income"] = round(expected[mo["month"]], 2) if mo["month"] in expected else None
+        return months
 
     @app.get("/api/summary/categories")
     def summary_categories(month: str | None = None, start: date | None = None, end: date | None = None,
@@ -227,6 +278,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        account: list[str] | None = Query(None)):
         txns = filtered(month=month, start=start, end=end, account=account)
         return analytics.income_sources(txns)
+
+    @app.get("/api/income/schedules")
+    def pay_schedules():
+        return [{**s.to_dict(), "monthly_amount": round(s.monthly_amount, 2)} for s in state.pay_schedules()]
+
+    @app.post("/api/income/schedules", status_code=201)
+    def add_pay_schedule(body: PayScheduleIn):
+        s = state.save_pay_schedule(body.to_state())
+        return {**s.to_dict(), "monthly_amount": round(s.monthly_amount, 2)}
+
+    @app.put("/api/income/schedules/{schedule_id}")
+    def update_pay_schedule(schedule_id: str, body: PayScheduleIn):
+        s = state.save_pay_schedule(body.to_state(), schedule_id)
+        if s is None:
+            raise HTTPException(404, "Pay schedule not found")
+        return {**s.to_dict(), "monthly_amount": round(s.monthly_amount, 2)}
+
+    @app.delete("/api/income/schedules/{schedule_id}", status_code=204)
+    def delete_pay_schedule(schedule_id: str):
+        if not state.delete_pay_schedule(schedule_id):
+            raise HTTPException(404, "Pay schedule not found")
+
+    @app.get("/api/income/expected")
+    def expected_income(month: str | None = None):
+        """Expected paydays (all, or one month's) with whether each arrived."""
+        today = date.today()
+        items = [e.to_dict(today) for e in ledger.snapshot().expected]
+        if month:
+            items = [e for e in items if e["month"] == month]
+        return items
 
     @app.get("/api/recurring")
     def recurring(include_inactive: bool = True):
@@ -249,8 +330,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 re.compile(body.pattern)
             except re.error as exc:
                 raise HTTPException(422, f"Invalid regular expression: {exc}") from exc
-        rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind, body.exclude)
-        matched = sum(1 for t in ledger.snapshot().transactions if rule.matches(t.description))
+        rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind, body.exclude,
+                              body.direction)
+        matched = sum(1 for t in ledger.snapshot().transactions if rule.matches(t.description)
+                      and rule.direction in ("any", "in" if t.amount > 0 else "out"))
         return {**rule.to_dict(), "matched": matched}
 
     @app.delete("/api/rules/{rule_id}", status_code=204)

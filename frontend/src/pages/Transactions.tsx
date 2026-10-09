@@ -14,6 +14,8 @@ export interface TxnFilters {
   recurring?: boolean;
   /** true = only scrubbed transactions, false = only those counted in the budget */
   excluded?: boolean;
+  /** only money in that still needs labelling as income or paid back */
+  needs_review?: boolean;
   q?: string;
 }
 
@@ -42,6 +44,7 @@ const SOURCE_LABEL: Record<Transaction["category_source"], string> = {
   rule: "From your rule",
   source: "From the bank's category",
   manual: "Set by you",
+  paycheck: "Matched to expected pay",
 };
 
 export function Transactions({ meta, stateFile, scope, filters, onFiltersChange, version, onDataChanged }: Props) {
@@ -75,6 +78,7 @@ export function Transactions({ meta, stateFile, scope, filters, onFiltersChange,
     account_type: scope.account_type,
     recurring: filters.recurring === undefined ? undefined : String(filters.recurring),
     excluded: filters.excluded === undefined ? undefined : String(filters.excluded),
+    needs_review: filters.needs_review ? "true" : undefined,
     sort,
     limit: PAGE,
     offset: page * PAGE,
@@ -176,9 +180,19 @@ export function Transactions({ meta, stateFile, scope, filters, onFiltersChange,
           <option value="">All accounts</option>
           {meta.accounts.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
-        <select className="select" aria-label="Type" value={filters.kind?.[0] ?? ""} onChange={(e) => set("kind", single(e.target.value) as Kind[] | undefined)}>
+        <select
+          className="select"
+          aria-label="Type"
+          value={filters.needs_review ? "__review__" : filters.kind?.[0] ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            onFiltersChange({ ...filters, needs_review: v === "__review__" || undefined,
+                              kind: v && v !== "__review__" ? [v as Kind] : undefined });
+          }}
+        >
           <option value="">All types</option>
           {meta.kinds.map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
+          <option value="__review__">Money in to review</option>
         </select>
         <select
           className="select"
@@ -275,7 +289,8 @@ export function Transactions({ meta, stateFile, scope, filters, onFiltersChange,
                       </div>
                       <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
                         {t.is_recurring && <span className="badge badge-accent">↻ Recurring</span>}
-                        {t.kind !== "expense" && <span className="badge">{KIND_LABELS[t.kind]}</span>}
+                        {t.kind !== "expense" && <span className="badge">{t.kind === "refund" && t.amount > 0 ? "Paid back" : KIND_LABELS[t.kind]}</span>}
+                        {t.needs_review && <span className="badge badge-warn" title="Is this income, or someone paying you back? Pick Income or the category it offsets.">? Review</span>}
                         {t.excluded && (
                           <span className="badge badge-warn">
                             ⊘ Excluded from budget{t.excluded_source === "rule" ? " by rule" : ""}

@@ -40,7 +40,7 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 
 export const KIND_LABELS: Record<Kind, string> = {
   expense: "Expense",
-  refund: "Refund",
+  refund: "Refund / paid back",
   income: "Income",
   transfer: "Transfer",
 };

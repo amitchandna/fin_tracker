@@ -139,7 +139,8 @@ def test_income_sources(client):
     assert sources[0]["source"] == "Acme Payroll"
     assert sum(s["share"] for s in sources) == pytest.approx(1, abs=0.01)
     may = client.get("/api/summary/income", params={"month": "2026-05"}).json()
-    assert {s["source"] for s in may} == {"Acme Payroll", "Interest Paid"}
+    # Before review, a friend's Zelle is guessed as income (and flagged for review).
+    assert {s["source"] for s in may} == {"Acme Payroll", "Interest Paid", "Zelle From Alex Kim"}
 
 
 def test_month_without_income_has_no_savings_rate(tmp_path):
@@ -186,3 +187,86 @@ def test_excluded_recurring_charges_not_detected(client):
     for t in client.get("/api/transactions", params={"q": "netflix"}).json()["items"]:
         client.patch(f"/api/transactions/{t['id']}", json={"excluded": True})
     assert "Netflix" not in {r["merchant"] for r in client.get("/api/recurring").json()}
+
+
+PAYCHECK = {"name": "Acme paycheck", "amount": 3850, "frequency": "semimonthly", "days": [15, 31],
+            "match_text": "payroll"}
+
+
+def test_money_in_needs_review_until_labelled(client):
+    queue = client.get("/api/transactions", params={"needs_review": True, "limit": 500}).json()["items"]
+    names = {i["merchant"] for i in queue}
+    assert {"Acme Payroll", "Interest Paid", "Zelle From Alex Kim", "Venmo Cashout"} <= names
+    assert all(i["amount"] > 0 for i in queue)
+    assert client.get("/api/summary/overview").json()["needs_review"] == len(queue)
+
+    # The friend paid back half a dinner: label it Dining -> it offsets spending, not income.
+    before = {m["month"]: m for m in client.get("/api/summary/monthly").json()}
+    z = next(i for i in queue if i["merchant"] == "Zelle From Alex Kim" and i["month"] == "2026-05")
+    r = client.patch(f"/api/transactions/{z['id']}", json={"category": "Dining"}).json()
+    assert r["kind"] == "refund" and r["needs_review"] is False
+    assert r["merchant_different_category"] == 1  # the September one, still guessed as income
+    assert r["merchant_needs_review"] == 1
+    after = {m["month"]: m for m in client.get("/api/summary/monthly").json()}
+    assert after["2026-05"]["income"] == pytest.approx(before["2026-05"]["income"] - 93)
+    assert after["2026-05"]["spending"] == pytest.approx(before["2026-05"]["spending"] - 93)
+    assert after["2026-05"]["savings"] == pytest.approx(before["2026-05"]["savings"])
+
+    # Labelling as income clears it from the queue too.
+    i = next(i for i in queue if i["merchant"] == "Venmo Cashout")
+    assert client.patch(f"/api/transactions/{i['id']}", json={"category": "Income"}).json()["kind"] == "income"
+    # Confirming a correct guess still offers to label the rest of that sender's deposits.
+    interest = next(i for i in queue if i["merchant"] == "Interest Paid")
+    r = client.patch(f"/api/transactions/{interest['id']}", json={"category": "Income"}).json()
+    assert r["merchant_different_category"] == 0 and r["merchant_needs_review"] == 5
+
+
+def test_payback_merchant_rule_only_affects_money_in(client):
+    r = client.post("/api/rules", json={"pattern": "Zelle From Alex Kim", "match": "merchant",
+                                        "category": "Entertainment", "direction": "in"}).json()
+    assert r["matched"] == 2
+    items = client.get("/api/transactions", params={"q": "alex kim"}).json()["items"]
+    assert all(i["kind"] == "refund" and not i["needs_review"] for i in items)
+    out = client.get("/api/transactions", params={"q": "jordan smith"}).json()["items"]
+    assert all(i["category"] == "Peer-to-Peer" for i in out)
+
+
+def test_pay_schedule_confirms_paychecks(client):
+    assert client.post("/api/income/schedules", json={**PAYCHECK, "days": [15]}).status_code == 422
+    assert client.post("/api/income/schedules", json={**PAYCHECK, "frequency": "biweekly"}).status_code == 422
+    s = client.post("/api/income/schedules", json=PAYCHECK)
+    assert s.status_code == 201 and s.json()["monthly_amount"] == 7700
+
+    payroll = client.get("/api/transactions", params={"q": "payroll", "limit": 50}).json()["items"]
+    assert len(payroll) == 12
+    assert all(p["category_source"] == "paycheck" and not p["needs_review"] for p in payroll)
+
+    expected = client.get("/api/income/expected").json()
+    received = [e for e in expected if e["status"] == "received"]
+    assert len(received) == 12 and {e["actual_amount"] for e in received} == {3850}
+    assert {e["status"] for e in expected if e["month"] == "2026-10"} <= {"upcoming", "due", "missed"}
+
+    months = {m["month"]: m for m in client.get("/api/summary/monthly").json()}
+    assert months["2026-06"]["expected_income"] == 7700
+
+
+def test_manual_label_beats_paycheck_match(client):
+    t = client.get("/api/transactions", params={"q": "payroll", "limit": 1}).json()["items"][0]
+    client.patch(f"/api/transactions/{t['id']}", json={"category": "Gifts & Donations"})
+    client.post("/api/income/schedules", json=PAYCHECK)
+    t2 = client.get("/api/transactions", params={"q": "payroll", "month": t["month"], "limit": 5}).json()["items"]
+    mine = next(x for x in t2 if x["id"] == t["id"])
+    assert mine["category"] == "Gifts & Donations" and mine["kind"] == "refund"
+    assert t["id"] not in {e["transaction_id"] for e in client.get("/api/income/expected").json()}
+
+
+def test_pay_schedule_crud_persists(client, data_dir, tmp_path):
+    sid = client.post("/api/income/schedules", json=PAYCHECK).json()["id"]
+    upd = client.put(f"/api/income/schedules/{sid}", json={**PAYCHECK, "amount": 4000}).json()
+    assert upd["amount"] == 4000
+    settings = Settings(data_dir=data_dir, state_dir=tmp_path / "state", frontend_dist=tmp_path / "nope")
+    again = TestClient(create_app(settings)).get("/api/income/schedules").json()
+    assert [s["amount"] for s in again] == [4000]
+    assert client.put("/api/income/schedules/nope", json=PAYCHECK).status_code == 404
+    assert client.delete(f"/api/income/schedules/{sid}").status_code == 204
+    assert client.get("/api/income/schedules").json() == []

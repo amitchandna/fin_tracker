@@ -117,7 +117,9 @@ a { color: var(--accent-ink); }
 .card-sub { color: var(--text-secondary); font-size: 13px; margin: 2px 0 0; }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; margin-top: 16px; }
 .stack { display: grid; gap: 16px; }
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+.grid-2.grid-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.grid-2 > * { min-width: 0; }
+@media (max-width: 900px) { .grid-2, .grid-2.grid-even { grid-template-columns: minmax(0, 1fr); } }
 
 /* Stat tiles */
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
@@ -130,7 +132,7 @@ a { color: var(--accent-ink); }
 .delta-down { color: var(--good-ink); }
 
 /* Tables */
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; position: relative; } /* relative: keeps .sr-only labels inside the scroller */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
 th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
@@ -198,4 +200,18 @@ tr.excluded td.amount { text-decoration: line-through; }
   .data-dir { max-width: 100%; }
   .bar-col { display: none; }
   .card-head > .filters { width: 100%; }
+}
+
+.review-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.review-actions .select { max-width: 170px; padding: 3px 8px; font-size: 13px; }
+tfoot td { border-top: 1px solid var(--grid); border-bottom: 0; }
+@media (max-width: 600px) {
+  .review-table thead { display: none; }
+  .review-table tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
+  .review-table td { border: 0; padding: 0; }
+  .review-table td:nth-child(1) { grid-column: 1; font-size: 12.5px; }
+  .review-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .review-table td:nth-child(3) { grid-column: 2; grid-row: 1; }
+  .review-table td:nth-child(4) { grid-column: 1 / -1; padding-top: 6px; }
+  .review-table .desc { max-width: none; white-space: normal; }
 }
