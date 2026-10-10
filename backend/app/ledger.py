@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from .categorizer import CARD_PAYMENT, INCOME, TRANSFERS, classify, detect_payment_method, normalize_merchant
+from .categorizer import CARD_PAYMENT, INCOME, TRANSFERS, classify, detect_payment_method, merchant_for
 from .models import Kind, ParsedFile, Transaction
 from .parser import account_name_from_file, parse_csv_file
 from .paychecks import ExpectedPay, expected_pay
@@ -131,7 +131,9 @@ class Ledger:
                     continue
                 seen_ids.add(tid)
 
-                c = classify(row.description, row.amount, parsed.account_type, row.source_category, rules)
+                merchant = merchant_for(row.description, row.memo)
+                c = classify(row.description, row.amount, parsed.account_type, row.source_category, rules,
+                             memo=row.memo, merchant=merchant)
                 category, kind, category_source = c.category, c.kind, c.category_source
                 fp = fingerprint(row.date.isoformat(), row.amount, row.description, n)
                 override = overrides.get(tid, fp)
@@ -154,8 +156,9 @@ class Ledger:
                     payment_method=detect_payment_method(row.description, parsed.account_type),
                     kind=kind,
                     category=category,
-                    merchant=normalize_merchant(row.description),
+                    merchant=merchant,
                     source_category=row.source_category,
+                    memo=row.memo,
                     category_source=category_source,
                     excluded=excluded,
                     excluded_source=excluded_source if excluded else None,

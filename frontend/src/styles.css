@@ -215,3 +215,4 @@ tfoot td { border-top: 1px solid var(--grid); border-bottom: 0; }
   .review-table td:nth-child(4) { grid-column: 1 / -1; padding-top: 6px; }
   .review-table .desc { max-width: none; white-space: normal; }
 }
+.memo { font-style: italic; }

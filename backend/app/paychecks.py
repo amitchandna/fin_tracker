@@ -30,7 +30,7 @@ class PaySchedule:
     days: list[int] = field(default_factory=list)
     weekend: str = "before"  # payday on a weekend moves to the Friday before | after (Monday) | none
     account: str | None = None  # only match deposits into this account
-    match_text: str | None = None  # only match deposits whose description contains this
+    match_text: str | None = None  # only match deposits whose description or memo contains this
     tolerance: float = 0.1  # how far the deposit may differ from `amount` (fraction)
     start_date: str | None = None
     end_date: str | None = None
@@ -126,7 +126,8 @@ def _candidate(t: Transaction, s: PaySchedule) -> bool:
         return False
     if s.account and t.account != s.account:
         return False
-    if s.match_text and s.match_text.strip().lower() not in t.description.lower():
+    text = f"{t.description} {t.memo or ''}".lower()
+    if s.match_text and s.match_text.strip().lower() not in text:
         return False
     return abs(t.amount - s.amount) <= max(abs(s.amount) * s.tolerance, 1.0)
 

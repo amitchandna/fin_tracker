@@ -15,7 +15,9 @@ export interface Transaction {
   payment_method: PaymentMethod;
   kind: Kind;
   category: string;
-  category_source: "auto" | "rule" | "source" | "manual" | "paycheck";
+  category_source: "auto" | "memo" | "rule" | "source" | "manual" | "paycheck";
+  /** Free-text notes from the file's memo-like columns. */
+  memo: string | null;
   source_category: string | null;
   is_recurring: boolean;
   recurring_id: string | null;

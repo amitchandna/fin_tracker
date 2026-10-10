@@ -35,6 +35,13 @@ CREDIT_HEADERS = [
     "credit", "credits", "deposit", "deposits", "credit amount", "money in", "paid in",
     "payments", "deposit amount", "amount credit",
 ]
+# Free-text notes that often say what a vague description was for
+# ("ACH DEBIT" + memo "PUGET SOUND ENERGY BILLPAY").
+MEMO_HEADERS = [
+    "memo", "notes", "note", "transaction memo", "extended details", "additional info",
+    "additional information", "appears on your statement as", "description 2", "payee notes", "comments",
+    "purpose", "remarks",
+]
 TYPE_HEADERS = ["transaction type", "type", "debit/credit", "dr/cr", "credit/debit", "cr/dr"]
 CATEGORY_HEADERS = ["category", "transaction category", "categories"]
 
@@ -223,9 +230,13 @@ def _should_invert(account_type: AccountType, rows: list[RawRow]) -> bool:
     (Amex, Discover, some Capital One exports)."""
     if not rows:
         return False
-    # Strongest signal: rows that are clearly money *in* show up as negative.
-    in_rows = [r for r in rows if CARD_PAYMENT_IN.search(r.description) or
-               (account_type != AccountType.CREDIT_CARD and re.search(r"PAYROLL|DIRECT DEP|SALARY", r.description, re.I))]
+    # Strongest signal: rows that are clearly money *in* show up as negative. On a card that's
+    # "PAYMENT THANK YOU"; in a bank account it's pay. ("ONLINE PAYMENT" in a checking account is
+    # a bill you paid, so card-payment wording must not be used there.)
+    if account_type == AccountType.CREDIT_CARD:
+        in_rows = [r for r in rows if CARD_PAYMENT_IN.search(r.description)]
+    else:
+        in_rows = [r for r in rows if re.search(r"PAYROLL|DIRECT DEP|DIR DEP|SALARY", r.description, re.I)]
     if in_rows:
         neg = sum(r.amount < 0 for r in in_rows)
         if neg > len(in_rows) / 2:
@@ -273,6 +284,9 @@ def parse_csv_text(text: str, file_name: str, overrides: dict | None = None) -> 
         cols["category"] = _find(headers, CATEGORY_HEADERS, used)
         used.add(cols["category"])
         cols["description"] = _find(headers, DESC_HEADERS, used)
+        used.add(cols["description"])
+        memo_cols = [i for i, h in enumerate(headers) if i not in used and h and any(
+            h == alias or (len(alias) > 3 and alias in h) for alias in MEMO_HEADERS)]
         if cols["amount"] is not None and (cols["debit"] is not None or cols["credit"] is not None):
             # Prefer the split debit/credit columns only when both exist.
             if cols["debit"] is None or cols["credit"] is None:
@@ -284,6 +298,7 @@ def parse_csv_text(text: str, file_name: str, overrides: dict | None = None) -> 
             result.error = "Could not find a header row with date and amount columns"
             return result
         cols = inferred
+        memo_cols = []
         data_rows = all_rows
         result.warnings.append("No header row found; columns were inferred from the data")
 
@@ -298,6 +313,7 @@ def parse_csv_text(text: str, file_name: str, overrides: dict | None = None) -> 
 
     result.columns = {k: (headers[v] if headers and v is not None else (str(v) if v is not None else None))
                       for k, v in cols.items()}
+    result.columns["memo"] = ", ".join(headers[i] for i in memo_cols) or None
 
     day_first = bool(overrides.get("day_first", False))
     if not day_first and cols["date"] is not None:
@@ -344,8 +360,13 @@ def parse_csv_text(text: str, file_name: str, overrides: dict | None = None) -> 
             continue
         desc = cell(r, "description") or " ".join(c.strip() for c in r if c.strip() and not parse_amount(c))
         desc = re.sub(r"\s+", " ", desc).strip() or "(no description)"
+        notes = []
+        for i in memo_cols:
+            note = re.sub(r"\s+", " ", r[i]).strip() if i < len(r) else ""
+            if note and note.lower() != desc.lower() and note not in notes:
+                notes.append(note)
         rows.append(RawRow(date=d, description=desc, amount=amount,
-                           source_category=cell(r, "category") or None))
+                           source_category=cell(r, "category") or None, memo=" · ".join(notes) or None))
 
     if not rows:
         result.error = "No valid transactions found"

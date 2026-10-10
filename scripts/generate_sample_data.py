@@ -124,18 +124,23 @@ def checking():
     # Friends paying back their share: money in that isn't income.
     rows.append((date(2026, 5, 10), "ZELLE PAYMENT FROM ALEX KIM", 0, 93.00))
     rows.append((date(2026, 7, 20), "VENMO CASHOUT", 0, 64.50))
-    rows.append((date(2026, 9, 14), "ZELLE PAYMENT FROM ALEX KIM", 0, 18.50))
+    rows.append((date(2026, 9, 14), "ZELLE PAYMENT FROM ALEX KIM", 0, 18.50, "movie tickets - my share"))
     rows.append((date(2026, 8, 12), "IRS TREAS 310 TAX REF", 0, 742.00))
+    # Vague descriptions where only the memo says what the money was for.
+    rows.append((date(2026, 7, 11), "POS PURCHASE 4471", 63.20, 0, "TRADER JOE S #552 SEATTLE WA"))
+    rows.append((date(2026, 8, 3), "ACH DEBIT", 112.40, 0, "PUGET SOUND ENERGY BILLPAY"))
+    rows.append((date(2026, 9, 2), "POS PURCHASE 8812", 38.75, 0, "BARTELL DRUGS #12 SEATTLE WA"))
+    rows.append((date(2026, 8, 21), "ACH DEBIT", 45.00, 0))  # nothing to go on: left for the user
     rows.sort(key=lambda r: r[0])
     balance = 8200.00
     with open(OUT / "wells_checking.csv", "w", newline="") as f:
         f.write("Account Name: Everyday Checking\nAccount Number: XXXXXX9921\n\n")
         w = csv.writer(f)
-        w.writerow(["Date", "Description", "Debit", "Credit", "Balance"])
-        for d, desc, debit, credit in rows:
+        w.writerow(["Date", "Description", "Debit", "Credit", "Balance", "Memo"])
+        for d, desc, debit, credit, *memo in rows:
             balance += credit - debit
             w.writerow([d.isoformat(), desc, f"{debit:.2f}" if debit else "", f"{credit:.2f}" if credit else "",
-                        f"{balance:.2f}"])
+                        f"{balance:.2f}", memo[0] if memo else ""])
 
 
 def savings():
