@@ -139,7 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 continue
             if needs_review is not None and t.needs_review != needs_review:
                 continue
-            if ql and ql not in t.description.lower() and ql not in t.merchant.lower() and ql not in t.category.lower():
+            if ql and not any(ql in (s or "").lower() for s in (t.description, t.merchant, t.category, t.memo)):
                 continue
             out.append(t)
         return out
@@ -244,7 +244,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                payment_method: list[str] | None = Query(None)):
         txns = filtered(month=month, account=account, payment_method=payment_method)
         buf = io.StringIO()
-        fields = ["date", "description", "merchant", "amount", "category", "kind", "payment_method",
+        fields = ["date", "description", "memo", "merchant", "amount", "category", "kind", "payment_method",
                   "account", "account_type", "is_recurring", "excluded", "source_file"]
         w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
@@ -380,7 +380,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(422, f"Invalid regular expression: {exc}") from exc
         rule = state.add_rule(body.pattern, body.category.strip(), body.match, body.kind, body.exclude,
                               body.direction)
-        matched = sum(1 for t in ledger.snapshot().transactions if rule.matches(t.description)
+        matched = sum(1 for t in ledger.snapshot().transactions if rule.matches(t.description, t.memo, t.merchant)
                       and rule.direction in ("any", "in" if t.amount > 0 else "out"))
         return {**rule.to_dict(), "matched": matched}
 

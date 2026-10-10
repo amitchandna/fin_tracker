@@ -307,3 +307,19 @@ def test_budgets_crud_progress_and_persistence(client, data_dir, tmp_path):
     settings = Settings(data_dir=data_dir, state_dir=tmp_path / "state", frontend_dist=tmp_path / "nope")
     assert TestClient(create_app(settings)).get("/api/budgets").json()["total"] == 950
     assert client.get("/api/budgets/progress", params={"month": "bad"}).status_code == 422
+
+
+def test_memos_from_sample_files(client):
+    def one(q):
+        return client.get("/api/transactions", params={"q": q, "limit": 5}).json()["items"]
+    tj = next(i for i in one("TRADER JOE S #552") if i["description"] == "POS PURCHASE 4471")
+    assert (tj["category"], tj["category_source"], tj["merchant"]) == ("Groceries", "memo", "Trader Joe's")
+    assert tj["memo"] == "TRADER JOE S #552 SEATTLE WA"
+    assert one("PUGET SOUND")[0]["category"] == "Utilities"
+    assert one("BARTELL")[0]["category"] == "Healthcare"
+    bare = [i for i in one("ACH DEBIT") if i["description"] == "ACH DEBIT" and not i["memo"]]
+    assert bare and bare[0]["category"] == "Uncategorized"
+    movie = next(i for i in one("movie tickets"))
+    assert (movie["category"], movie["kind"], movie["needs_review"]) == ("Entertainment", "refund", True)
+    r = client.get("/api/transactions/export").text.splitlines()
+    assert r[0].startswith("date,description,memo,") and any("TRADER JOE S #552" in line for line in r)

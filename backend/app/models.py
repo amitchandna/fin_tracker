@@ -48,7 +48,8 @@ class Transaction:
     category: str
     merchant: str
     source_category: str | None = None
-    category_source: str = "auto"  # auto | rule | source | manual | paycheck
+    category_source: str = "auto"  # auto | memo | rule | source | manual | paycheck
+    memo: str | None = None
     is_recurring: bool = False
     recurring_id: str | None = None
     excluded: bool = False  # scrubbed from every budget total, still listed
@@ -68,7 +69,7 @@ class Transaction:
         """Money in that the app only guessed at: the user should say whether it's
         income or someone paying them back."""
         return (self.amount > 0 and not self.excluded and self.kind in (Kind.INCOME, Kind.REFUND)
-                and self.category_source in ("auto", "source"))
+                and self.category_source in ("auto", "memo", "source"))
 
     def to_dict(self) -> dict:
         return {
@@ -76,6 +77,7 @@ class Transaction:
             "date": self.date.isoformat(),
             "month": self.month,
             "description": self.description,
+            "memo": self.memo,
             "merchant": self.merchant,
             "amount": round(self.amount, 2),
             "source_file": self.source_file,
@@ -102,6 +104,7 @@ class RawRow:
     description: str
     amount: float  # signed: negative = money out
     source_category: str | None = None
+    memo: str | None = None  # free-text notes from memo-like columns
 
 
 @dataclass

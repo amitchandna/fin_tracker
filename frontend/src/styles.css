@@ -246,3 +246,4 @@ tfoot td { border-top: 1px solid var(--grid); border-bottom: 0; }
 .budget-mark { background: var(--surface-1); box-shadow: 0 0 0 1px var(--text-primary); }
 .pace-mark { background: var(--text-primary); }
 .budget-input { width: 130px; text-align: right; }
+.memo { font-style: italic; }

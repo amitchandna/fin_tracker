@@ -105,8 +105,24 @@ Each transaction gets three labels:
   as spending.
 - **Payment method**: `credit` (anything on a credit card), `debit` (debit card / bank
   purchase), `transfer` (ACH, Zelle, bill pay), `check` or `cash` (ATM).
-- **Category**: picked by the first match in this order: your manual override → your rules →
-  ~500 built-in merchant keywords → the bank's own category → `Uncategorized`.
+- **Category**: picked by the first match in this order: your manual override → your rules
+  (which can match the description or the memo) → ~1,150 built-in merchant keywords on the
+  description → the **memo** → the bank's own category → `Uncategorized`.
+
+**Memos.** Many exports have a Memo, Notes or Extended Details column that says what a vague
+description was for. The app reads every such column:
+- A generic description ("POS PURCHASE 4471", "ACH DEBIT") with an informative memo ("TRADER JOE S
+  #552 SEATTLE WA") is categorized from the memo (Groceries) and named after it (Trader Joe's).
+- Person-to-person payments use the memo for what the money was for: a Zelle with "dinner" is
+  Dining, and a Venmo *to you* with "movie tickets" is a pay-back against Entertainment.
+- If neither the description nor the memo says anything useful, the transaction is left
+  `Uncategorized` (marked **? Categorize**) for you to decide. The app never guesses.
+
+Built-in keywords cover every category, with extra coverage for Washington State and Pacific
+Northwest merchants: QFC, Fred Meyer, Haggen, PCC, Metropolitan Market, Uwajimaya and Yoke's,
+plus Puget Sound Energy, Seattle City Light, Swedish, UW Medicine, Bartell Drugs, Sound
+Transit, WA State Ferries, Good To Go and more. **Healthcare** covers doctor's visits,
+pharmacies, dental, vision, therapy and labs; gyms are under **Fitness**.
 
 On top of these, a transaction can be **excluded from the budget**, either by you or by a
 rule. Excluded transactions don't count toward spending, income, savings or recurring

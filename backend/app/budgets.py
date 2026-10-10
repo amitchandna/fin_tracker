@@ -114,8 +114,11 @@ def progress(transactions: list[Transaction], budgets: dict[str, float], month: 
             "projected": round(projected, 2),
             "status": _status(spent, budget, projected, in_progress),
         })
+    # Net figures, so a category can be negative when pay-backs exceed what was spent that month
+    # (a friend repaying last month's tickets). Keeping those makes the totals add up to real spending.
     unbudgeted = sorted(
-        ({"category": c, "spent": round(v, 2)} for c, v in spent_by_cat.items() if c not in budgets and v > 0.005),
+        ({"category": c, "spent": round(v, 2)} for c, v in spent_by_cat.items()
+         if c not in budgets and abs(v) > 0.005),
         key=lambda r: -r["spent"],
     )
     total_budget = sum(budgets.values())

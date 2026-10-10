@@ -74,3 +74,12 @@ def test_projection_uses_what_you_usually_spend_in_the_rest_of_the_month():
     assert rows["Groceries"]["status"] == "on_track"
     assert rows["Shopping"]["projected"] == 94            # 64 + usual 30, not 64 * 3
     assert rows["Shopping"]["status"] == "on_track"
+
+
+def test_net_negative_unbudgeted_category_keeps_totals_consistent():
+    # A friend pays back tickets bought last month: Entertainment is net -18.50 this month.
+    txns = [txn(1, date(2026, 9, 3), -100, "Dining"), txn(2, date(2026, 9, 14), 18.5, "Entertainment"),
+            txn(3, date(2026, 9, 30), -40, "Shopping")]
+    p = progress(txns, {"Dining": 200}, "2026-09")
+    assert p["unbudgeted"] == [{"category": "Shopping", "spent": 40}, {"category": "Entertainment", "spent": -18.5}]
+    assert p["totals"]["spent"] + p["totals"]["unbudgeted"] == pytest.approx(100 + 40 - 18.5)

@@ -41,6 +41,7 @@ interface Props {
 const PAGE = 50;
 const SOURCE_LABEL: Record<Transaction["category_source"], string> = {
   auto: "Auto-categorized",
+  memo: "From the memo",
   rule: "From your rule",
   source: "From the bank's category",
   manual: "Set by you",
@@ -287,10 +288,16 @@ export function Transactions({ meta, stateFile, scope, filters, onFiltersChange,
                       <div className="small muted desc" title={t.description}>
                         {t.description}
                       </div>
+                      {t.memo && (
+                        <div className="small muted desc memo" title={t.memo}>Memo: {t.memo}</div>
+                      )}
                       <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
                         {t.is_recurring && <span className="badge badge-accent">↻ Recurring</span>}
                         {t.kind !== "expense" && <span className="badge">{t.kind === "refund" && t.amount > 0 ? "Paid back" : KIND_LABELS[t.kind]}</span>}
                         {t.needs_review && <span className="badge badge-warn" title="Is this income, or someone paying you back? Pick Income or the category it offsets.">? Review</span>}
+                        {t.category === "Uncategorized" && t.amount < 0 && !t.excluded && (
+                          <span className="badge badge-warn" title="Neither the description nor the memo says what this was for. Pick a category.">? Categorize</span>
+                        )}
                         {t.excluded && (
                           <span className="badge badge-warn">
                             ⊘ Excluded from budget{t.excluded_source === "rule" ? " by rule" : ""}
@@ -312,7 +319,11 @@ export function Transactions({ meta, stateFile, scope, filters, onFiltersChange,
                         {meta.categories.map((c) => <option key={c} value={c}>{c}</option>)}
                         {t.category_source === "manual" && <option value="__reset__">↺ Reset to automatic</option>}
                       </select>
-                      <div className="small muted">{SOURCE_LABEL[t.category_source]}</div>
+                      <div className="small muted">
+                        {t.category === "Uncategorized" && t.category_source === "auto"
+                          ? "Nothing to go on: pick one"
+                          : SOURCE_LABEL[t.category_source]}
+                      </div>
                     </td>
                     <td className="secondary">{PAYMENT_METHOD_LABELS[t.payment_method]}</td>
                     <td className="secondary small">{t.account}</td>
