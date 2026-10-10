@@ -61,7 +61,7 @@ class StateStore:
         self.path = state_dir / "state.json"
         self._lock = threading.RLock()
         self.version = 0
-        self._data = {"rules": [], "overrides": {}, "sources": {}, "excluded": {}, "pay_schedules": []}
+        self._data = {"rules": [], "overrides": {}, "sources": {}, "excluded": {}, "pay_schedules": [], "budgets": {}}
         self._load()
 
     def _load(self) -> None:
@@ -174,6 +174,17 @@ class StateStore:
                 return False
             self._save()
             return True
+
+    # Budgets -----------------------------------------------------------------
+    def budgets(self) -> dict[str, float]:
+        """Monthly budget per category."""
+        with self._lock:
+            return {k: float(v) for k, v in self._data["budgets"].items()}
+
+    def set_budgets(self, budgets: dict[str, float]) -> None:
+        with self._lock:
+            self._data["budgets"] = {k: round(float(v), 2) for k, v in budgets.items() if v and v > 0}
+            self._save()
 
     # Source settings ---------------------------------------------------------
     def source_settings(self) -> dict[str, dict]:

@@ -28,6 +28,16 @@ your money goes each month, across all of your accounts.
   expected vs. actual income per month and flags any paycheck that didn't arrive. Deposits
   that match a paycheck (within 4 days and ±10% by default) are confirmed as income
   automatically.
+- **Monthly budgets.** Set how much you want to spend in each category per month. Amounts
+  start from your average spending over recent complete months, rounded up to $10. For any
+  month you see:
+  - spent vs. budget and what's left in each category, each marked ✓ on track, ! at risk or
+    ▲ over
+  - for the month in progress, a marker showing where an even pace would be by now
+  - a month-end projection: spending so far plus what you usually spend in the rest of the
+    month, so rent paid on the 1st isn't projected twice
+  - spending in categories you haven't budgeted
+  - a month-by-month history of each category against its budget
 - **Exclude anything from the budget.** A one-off that doesn't belong (a reimbursed work trip,
   buying a car, money you moved for someone else) can be left out of every total, chart and
   savings figure with one click. It stays visible in the transaction list and you can add it
@@ -116,6 +126,7 @@ backend/                 FastAPI + stdlib csv (no pandas)
   app/categorizer.py     merchant normalisation, built-in rules, payment method, kind
   app/recurring.py       cadence + amount-consistency detection of recurring payments
   app/paychecks.py       pay schedules -> expected paydays, matched to real deposits
+  app/budgets.py         monthly budgets: progress, pace, projection, suggestions
   app/ledger.py          scans the folder, de-duplicates, caches until files/settings change
   app/analytics.py       monthly / category / overview aggregations
   app/state.py           your rules, overrides and per-file settings (JSON, atomic writes)
@@ -155,6 +166,10 @@ untouched as your record.
 | `GET /api/transactions/export` | categorized CSV export |
 | `GET/POST /api/income/schedules`, `PUT/DELETE /api/income/schedules/{id}` | your expected paychecks |
 | `GET /api/income/expected?month=YYYY-MM` | expected paydays and whether each arrived |
+| `GET/PUT /api/budgets` | your monthly budget per category |
+| `GET /api/budgets/suggest` | suggested amounts from recent spending |
+| `GET /api/budgets/progress?month=YYYY-MM` | spent vs budget, pace and projection for a month |
+| `GET /api/budgets/history?months=6` | spent per budgeted category for recent months |
 | `GET /api/recurring` | detected recurring payments |
 | `GET/POST/DELETE /api/rules` | custom rules (`contains`, `regex` or exact `merchant` match; optional `exclude`; `direction` limits a rule to money `in` or `out`) |
 | `GET /api/sources`, `PUT /api/sources/{file}` | detected files and per-file overrides |

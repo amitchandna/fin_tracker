@@ -270,3 +270,40 @@ def test_pay_schedule_crud_persists(client, data_dir, tmp_path):
     assert client.put("/api/income/schedules/nope", json=PAYCHECK).status_code == 404
     assert client.delete(f"/api/income/schedules/{sid}").status_code == 204
     assert client.get("/api/income/schedules").json() == []
+
+
+def test_budgets_crud_progress_and_persistence(client, data_dir, tmp_path):
+    assert client.get("/api/budgets").json() == {"budgets": [], "total": 0}
+    s = client.get("/api/budgets/suggest").json()
+    assert s["Housing"]["suggested"] == 2450 and s["Groceries"]["suggested"] >= s["Groceries"]["average"]
+
+    r = client.put("/api/budgets", json={"budgets": [
+        {"category": "Groceries", "amount": 700}, {"category": "Dining", "amount": 250},
+        {"category": "Travel", "amount": 0}]})
+    assert r.json() == {"budgets": [{"category": "Groceries", "amount": 700}, {"category": "Dining", "amount": 250}],
+                        "total": 950}
+    assert client.put("/api/budgets", json={"budgets": [{"category": "Income", "amount": 9}]}).status_code == 422
+    assert client.put("/api/budgets", json={"budgets": [{"category": "Dining", "amount": 1},
+                                                        {"category": "Dining", "amount": 2}]}).status_code == 422
+    assert client.put("/api/budgets", json={"budgets": [{"category": "Dining", "amount": -5}]}).status_code == 422
+
+    p = client.get("/api/budgets/progress").json()
+    assert p["month"] == "2026-09" and not p["in_progress"]
+    by = {c["category"]: c for c in p["categories"]}
+    month = {m["month"]: m for m in client.get("/api/summary/monthly").json()}["2026-09"]
+    assert by["Groceries"]["spent"] == pytest.approx(month["by_category"]["Groceries"])
+    assert {u["category"] for u in p["unbudgeted"]} >= {"Housing", "Utilities"}
+    assert p["totals"]["unbudgeted"] == pytest.approx(month["spending"] - p["totals"]["spent"], abs=0.05)
+
+    # Excluding a transaction takes it out of budget spending too.
+    t = client.get("/api/transactions", params={"month": "2026-09", "category": "Groceries", "limit": 1}).json()["items"][0]
+    client.patch(f"/api/transactions/{t['id']}", json={"excluded": True})
+    p2 = client.get("/api/budgets/progress", params={"month": "2026-09"}).json()
+    assert p2["categories"][0]["spent"] == pytest.approx(by["Groceries"]["spent"] + t["amount"], abs=0.01)
+
+    h = client.get("/api/budgets/history", params={"months": 3}).json()
+    assert [m["month"] for m in h] == ["2026-07", "2026-08", "2026-09"] and h[0]["total_budget"] == 950
+
+    settings = Settings(data_dir=data_dir, state_dir=tmp_path / "state", frontend_dist=tmp_path / "nope")
+    assert TestClient(create_app(settings)).get("/api/budgets").json()["total"] == 950
+    assert client.get("/api/budgets/progress", params={"month": "bad"}).status_code == 422

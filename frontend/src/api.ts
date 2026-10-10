@@ -1,5 +1,5 @@
 import type {
-  AppConfig, CategoryRow, ExpectedPay, IncomeSource, Meta, PaySchedule, PayScheduleInput, MonthSummary, Overview, RecurringSeries, Rule, ScopeFilter, Source,
+  AppConfig, BudgetHistoryMonth, BudgetLine, BudgetProgress, BudgetSuggestions, CategoryRow, ExpectedPay, IncomeSource, Meta, PaySchedule, PayScheduleInput, MonthSummary, Overview, RecurringSeries, Rule, ScopeFilter, Source,
   TransactionPage, TransactionUpdate,
 } from "./types";
 
@@ -50,6 +50,15 @@ export const api = {
   monthly: (s?: ScopeFilter) => request<MonthSummary[]>(`/api/summary/monthly${toQuery(scope(s))}`),
   categories: (month?: string, s?: ScopeFilter) =>
     request<CategoryRow[]>(`/api/summary/categories${toQuery({ month, ...scope(s) })}`),
+  budgets: () => request<{ budgets: BudgetLine[]; total: number }>("/api/budgets"),
+  saveBudgets: (budgets: BudgetLine[]) =>
+    request<{ budgets: BudgetLine[]; total: number }>("/api/budgets", {
+      method: "PUT",
+      body: JSON.stringify({ budgets }),
+    }),
+  budgetSuggestions: () => request<BudgetSuggestions>("/api/budgets/suggest"),
+  budgetProgress: (month?: string) => request<BudgetProgress>(`/api/budgets/progress${toQuery({ month })}`),
+  budgetHistory: (months = 6) => request<BudgetHistoryMonth[]>(`/api/budgets/history${toQuery({ months })}`),
   paySchedules: () => request<PaySchedule[]>("/api/income/schedules"),
   savePaySchedule: (s: PayScheduleInput, id?: string) =>
     request<PaySchedule>(`/api/income/schedules${id ? `/${id}` : ""}`, {

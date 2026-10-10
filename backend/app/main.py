@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
-from . import analytics
+from . import analytics, budgets as budget_logic
 from .categorizer import CATEGORIES
 from .config import Settings
 from .ledger import Ledger
@@ -71,6 +71,22 @@ class PayScheduleIn(BaseModel):
         d["account"] = d["account"] or None
         d["match_text"] = (d["match_text"] or "").strip() or None
         return d
+
+
+class BudgetLine(BaseModel):
+    category: str = Field(min_length=1, max_length=60)
+    amount: float = Field(ge=0, le=10_000_000)
+
+
+class BudgetsIn(BaseModel):
+    budgets: list[BudgetLine]
+
+    @model_validator(mode="after")
+    def unique(self):
+        names = [b.category.strip() for b in self.budgets]
+        if len(names) != len(set(names)):
+            raise ValueError("Each category can only have one budget")
+        return self
 
 
 class SourceSettingsIn(BaseModel):
@@ -278,6 +294,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        account: list[str] | None = Query(None)):
         txns = filtered(month=month, start=start, end=end, account=account)
         return analytics.income_sources(txns)
+
+    @app.get("/api/budgets")
+    def get_budgets():
+        b = state.budgets()
+        return {"budgets": [{"category": c, "amount": a} for c, a in sorted(b.items(), key=lambda kv: -kv[1])],
+                "total": round(sum(b.values()), 2)}
+
+    @app.put("/api/budgets")
+    def put_budgets(body: BudgetsIn):
+        """Replace all budgets. A category with amount 0 (or left out) has no budget."""
+        if any(b.category.strip() in analytics.NON_BUDGETABLE for b in body.budgets if b.amount > 0):
+            raise HTTPException(422, "Income, transfers and card payments can't have a spending budget")
+        state.set_budgets({b.category.strip(): b.amount for b in body.budgets})
+        return get_budgets()
+
+    @app.get("/api/budgets/suggest")
+    def suggest_budgets(months: int = Query(3, ge=1, le=12)):
+        """Average monthly spending per category over recent complete months."""
+        return budget_logic.suggest(ledger.snapshot().transactions, months)
+
+    @app.get("/api/budgets/progress")
+    def budget_progress(month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$")):
+        txns = ledger.snapshot().transactions
+        if month is None:
+            month = max((t.month for t in txns), default=budget_logic.current_month())
+        return budget_logic.progress(txns, state.budgets(), month)
+
+    @app.get("/api/budgets/history")
+    def budget_history(months: int = Query(6, ge=1, le=36)):
+        txns = ledger.snapshot().transactions
+        all_months = sorted({t.month for t in txns})[-months:]
+        return budget_logic.history(txns, state.budgets(), all_months)
 
     @app.get("/api/income/schedules")
     def pay_schedules():

@@ -15,6 +15,10 @@ from .models import Kind, Transaction
 from .recurring import RecurringSeries
 
 
+# Categories that are never spending, so they can't have a spending budget.
+NON_BUDGETABLE = {"Income", "Credit Card Payment", "Transfers"}
+
+
 def _r(x: float) -> float:
     return round(x + 0.0, 2)
 

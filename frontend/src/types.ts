@@ -221,3 +221,52 @@ export interface ScopeFilter {
   account?: string[];
   account_type?: AccountType[];
 }
+
+export type BudgetStatus = "on_track" | "at_risk" | "over";
+
+export interface BudgetLine {
+  category: string;
+  amount: number;
+}
+
+export interface BudgetRow {
+  category: string;
+  budget: number;
+  spent: number;
+  remaining: number;
+  used: number | null;
+  /** How much of the budget an even pace would have used by now. */
+  pace: number;
+  /** Spending so far extended to the whole month (equals spent for a finished month). */
+  projected: number;
+  status: BudgetStatus;
+}
+
+export interface BudgetProgress {
+  month: string;
+  in_progress: boolean;
+  data_through: string | null;
+  elapsed: number;
+  categories: BudgetRow[];
+  unbudgeted: { category: string; spent: number }[];
+  totals: {
+    budget: number;
+    spent: number;
+    remaining: number;
+    projected: number;
+    unbudgeted: number;
+    over: number;
+    at_risk: number;
+    status: BudgetStatus | null;
+  };
+}
+
+export interface BudgetHistoryMonth {
+  month: string;
+  spent: Record<string, number>;
+  total_spent: number;
+  total_budget: number;
+  over: string[];
+}
+
+export type BudgetSuggestions = Record<string, { average: number; suggested: number; months: number }>;
