@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { ErrorNotice, Loading, Segmented } from "./components/common";
+import { Budget } from "./pages/Budget";
 import { Income } from "./pages/Income";
 import { Overview } from "./pages/Overview";
 import { Recurring } from "./pages/Recurring";
@@ -13,6 +14,7 @@ import { useAsync } from "./useAsync";
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "income", label: "Income & Savings" },
+  { id: "budget", label: "Budget" },
   { id: "transactions", label: "Transactions" },
   { id: "recurring", label: "Recurring" },
   { id: "sources", label: "Files" },
@@ -147,6 +149,8 @@ export default function App() {
         ) : tab === "overview" ? (
           <Overview scope={scope} categoryOrder={categoryOrder} accounts={meta.data!.accounts} version={version}
                     onDrill={drill} />
+        ) : tab === "budget" ? (
+          <Budget meta={meta.data!} version={version} onDrill={drill} onDataChanged={bump} />
         ) : tab === "income" ? (
           <Income meta={meta.data!} version={version} onDrill={drill} onDataChanged={bump} />
         ) : tab === "transactions" ? (

@@ -35,6 +35,7 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
   const months = monthly.data ?? [];
   const selectedMonth =
     pickedMonth && months.some((m) => m.month === pickedMonth) ? pickedMonth : months.at(-1)?.month;
+  const budget = useAsync(() => api.budgetProgress(selectedMonth), [selectedMonth, version]);
   const categories = useAsync(
     () => (selectedMonth ? api.categories(selectedMonth, scope) : Promise.resolve([])),
     [selectedMonth, scopeKey, version],
@@ -119,6 +120,17 @@ export function Overview({ scope, categoryOrder, accounts, version, onDrill }: P
             Review them
           </a>{" "}
           to make the breakdown more accurate.
+        </div>
+      )}
+
+      {budget.data && budget.data.totals.budget > 0 && (
+        <div className={`notice ${budget.data.totals.status === "over" ? "notice-warn" : "notice-info"}`}>
+          <strong>Budget, {monthLabel(budget.data.month)}:</strong> {money(budget.data.totals.spent)} of{" "}
+          {money(budget.data.totals.budget)} spent
+          {budget.data.totals.over > 0 && ` · ▲ ${budget.data.totals.over} categor${budget.data.totals.over === 1 ? "y" : "ies"} over`}
+          {budget.data.totals.at_risk > 0 && ` · ! ${budget.data.totals.at_risk} at risk`}
+          {budget.data.totals.over === 0 && budget.data.totals.at_risk === 0 && " · ✓ all on track"}.{" "}
+          <a href="#/budget">See budget</a>
         </div>
       )}
 

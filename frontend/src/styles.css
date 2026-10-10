@@ -30,6 +30,13 @@
   --series-8: #e34948;
   --series-other: #a9a79f;
 
+  /* Status: reserved for state, always paired with an icon and a label */
+  --status-good: #0ca30c;
+  --status-warn: #fab219;
+  --status-bad: #d03b3b;
+  --status-good-ink: #006300;
+  --status-warn-ink: #7a5200;
+  --status-bad-ink: #b42f2f;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.04);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -69,6 +76,9 @@
     --series-7: #9085e9;
     --series-8: #e66767;
     --series-other: #6b6a64;
+    --status-good-ink: #0ca30c;
+    --status-warn-ink: #f5cf73;
+    --status-bad-ink: #e66767;
   }
 }
 
@@ -215,4 +225,25 @@ tfoot td { border-top: 1px solid var(--grid); border-bottom: 0; }
   .review-table td:nth-child(4) { grid-column: 1 / -1; padding-top: 6px; }
   .review-table .desc { max-width: none; white-space: normal; }
 }
+
+/* Budgets */
+.status-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.status-chip.status-good { color: var(--status-good-ink); }
+.status-chip.status-warn { color: var(--status-warn-ink); }
+.status-chip.status-bad { color: var(--status-bad-ink); }
+.budget-list { display: grid; gap: 4px; }
+.budget-row { display: grid; gap: 6px; text-align: left; background: none; border: 0; border-radius: 8px; padding: 10px 8px; cursor: pointer; width: 100%; }
+.budget-row:hover { background: var(--surface-2); }
+.budget-row:focus-visible { outline: 2px solid var(--accent); }
+.budget-row-head, .budget-row-foot { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.budget-row-foot { font-size: 13px; font-variant-numeric: tabular-nums; }
+.budget-bar { position: relative; height: 10px; border-radius: 5px; background: var(--grid); overflow: visible; }
+.budget-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; }
+.budget-fill.status-good { background: var(--status-good); }
+.budget-fill.status-warn { background: var(--status-warn); }
+.budget-fill.status-bad { background: var(--status-bad); }
+.budget-mark, .pace-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; }
+.budget-mark { background: var(--surface-1); box-shadow: 0 0 0 1px var(--text-primary); }
+.pace-mark { background: var(--text-primary); }
+.budget-input { width: 130px; text-align: right; }
 .memo { font-style: italic; }
